@@ -11,6 +11,9 @@ app = FastAPI()
 
 LLAMA_CPP_URL = "http://192.168.0.201:8081"
 
+from backend.agent import Agent
+agent = Agent(llama_cpp_url=LLAMA_CPP_URL)
+
 templates = Jinja2Templates(directory="templates")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -104,6 +107,30 @@ async def chat(request: Request):
         return result
     finally:
         conn.close()
+
+
+@app.post("/api/agent")
+async def agent_chat(request: Request):
+    data = await request.json()
+    
+    import time
+    start_time = time.time()
+    
+    messages = data.get('messages', [])
+    max_tokens = data.get('max_tokens', 2048)
+    
+    result = agent.run(messages, max_tokens)
+    elapsed_time = time.time() - start_time
+    
+    result['response_time'] = round(elapsed_time, 2)
+    
+    return result
+
+
+@app.get("/api/tools")
+async def get_tools():
+    from backend.tools.base import tool_registry
+    return {"tools": tool_registry.get_tools_list()}
 
 
 @app.get("/api/models")
