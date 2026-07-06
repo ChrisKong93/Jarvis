@@ -528,6 +528,7 @@
         const modelInfoEl = document.getElementById('model-info');
 
         let isProcessing = false;
+        let messages = [];
 
         function markdownToHtml(text) {
             const codeBlocks = [];
@@ -740,6 +741,7 @@
             messageInput.value = '';
 
             addMessage('user', message);
+            messages.push({ role: 'user', content: message });
             const typingDiv = addTypingIndicator();
 
             try {
@@ -753,9 +755,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        messages: [
-                            { role: 'user', content: message }
-                        ],
+                        messages: messages,
                         stream: false,
                         max_tokens: 2048,
                         temperature: 0.7,
@@ -779,6 +779,8 @@
                     
                     reply = reply.replace(/<\/s>$/g, '').trim();
                     
+                    messages.push({ role: 'assistant', content: reply });
+                    
                     const speedInfo = {
                         tokensPerSecond: data.tokens_per_second,
                         responseTime: data.response_time,
@@ -789,6 +791,7 @@
                 } else if (data.content) {
                     let reply = data.content;
                     reply = reply.replace(/<\/s>$/g, '').trim();
+                    messages.push({ role: 'assistant', content: reply });
                     addMessage('bot', reply);
                 } else {
                     addMessage('bot', '抱歉，我无法回答这个问题。');
@@ -814,6 +817,7 @@
 
         function clearChat() {
             chatContainer.innerHTML = '';
+            messages = [];
             addMessage('bot', '您好！我是基于 llama.cpp 的 AI 助手。有什么我可以帮助您的吗？');
         }
 

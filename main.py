@@ -4,9 +4,12 @@ from fastapi.templating import Jinja2Templates
 import http.client
 import json
 
+from session_manager import session_manager
+from context_manager import truncate_messages, calculate_messages_tokens
+
 app = FastAPI()
 
-LLAMA_CPP_URL = "http://192.168.0.201:8082"
+LLAMA_CPP_URL = "http://192.168.0.201:8081"
 
 templates = Jinja2Templates(directory="templates")
 
@@ -16,6 +19,31 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/api/session")
+async def create_session():
+    session_id = session_manager.create_session()
+    return {"session_id": session_id}
+
+
+@app.get("/api/session/{session_id}")
+async def get_session(session_id: str):
+    session = session_manager.get_session(session_id)
+    if session:
+        return {
+            "session_id": session.session_id,
+            "messages": session.messages,
+            "created_at": session.created_at.isoformat(),
+            "last_active": session.last_active.isoformat()
+        }
+    return {"error": "会话不存在"}
+
+
+@app.delete("/api/session/{session_id}")
+async def delete_session(session_id: str):
+    success = session_manager.delete_session(session_id)
+    return {"success": success}
 
 
 def get_host_port():
@@ -47,6 +75,12 @@ async def chat(request: Request):
     import time
     start_time = time.time()
     
+    messages = data.get('messages', [])
+    max_tokens = data.get('max_tokens', 2048)
+    
+    truncated_messages = truncate_messages(messages, max_tokens)
+    data['messages'] = truncated_messages
+    
     host, port = get_host_port()
     conn = http.client.HTTPConnection(host, port, timeout=300)
     
@@ -62,6 +96,10 @@ async def chat(request: Request):
             tokens_per_second = round(completion_tokens / elapsed_time, 2) if elapsed_time > 0 else 0
             result['tokens_per_second'] = tokens_per_second
             result['response_time'] = round(elapsed_time, 2)
+        
+        result['context_tokens'] = calculate_messages_tokens(truncated_messages)
+        result['original_messages_count'] = len(messages)
+        result['truncated_messages_count'] = len(truncated_messages)
         
         return result
     finally:
