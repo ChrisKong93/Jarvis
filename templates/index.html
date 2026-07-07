@@ -283,6 +283,139 @@
             max-width: 80%;
         }
 
+        .message-content h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin: 16px 0 8px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #475569;
+        }
+
+        .message-content h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin: 14px 0 6px 0;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #475569;
+        }
+
+        .message-content h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin: 12px 0 4px 0;
+        }
+
+        .message-content ul, .message-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .message-content li {
+            margin: 4px 0;
+            color: #e2e8f0;
+        }
+
+        .message-content ul li {
+            list-style-type: disc;
+        }
+
+        .message-content ol li {
+            list-style-type: decimal;
+        }
+
+        .message-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .message-content th {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            padding: 8px 12px;
+            text-align: left;
+            border: 1px solid #475569;
+            font-weight: 600;
+        }
+
+        .message-content td {
+            padding: 8px 12px;
+            border: 1px solid #475569;
+            color: #cbd5e1;
+        }
+
+        .message-content tr:nth-child(even) {
+            background: rgba(15, 23, 42, 0.5);
+        }
+
+        .message-content tr:hover {
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .message-content hr {
+            border: none;
+            border-top: 1px dashed #475569;
+            margin: 16px 0;
+        }
+
+        .message-content blockquote {
+            border-left: 3px solid #8b5cf6;
+            padding: 8px 16px;
+            margin: 12px 0;
+            background: rgba(139, 92, 246, 0.1);
+            color: #c4b5fd;
+            font-style: italic;
+        }
+
+        .message-content a {
+            color: #60a5fa;
+            text-decoration: none;
+        }
+
+        .message-content a:hover {
+            text-decoration: underline;
+        }
+
+        .message-content code {
+            background: rgba(15, 23, 42, 0.8);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', monospace;
+            font-size: 12px;
+            color: #f87171;
+        }
+
+        .message-content pre {
+            background: rgba(15, 23, 42, 0.9);
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 8px 0;
+            border: 1px solid #334155;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+            color: #e2e8f0;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .message-content strong {
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+
+        .message-content em {
+            color: #c4b5fd;
+            font-style: italic;
+        }
+
         .thinking-badge {
             display: inline-flex;
             align-items: center;
@@ -313,6 +446,84 @@
             font-size: 11px;
             color: #64748b;
             font-family: 'SF Mono', monospace;
+        }
+
+        .thinking-container {
+            margin-top: 8px;
+            padding: 12px;
+            background: rgba(139, 92, 246, 0.1);
+            border-radius: 10px;
+            border-left: 3px solid #8b5cf6;
+        }
+
+        .thinking-label {
+            font-size: 11px;
+            color: #a78bfa;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .thinking-steps {
+            font-size: 12px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+
+        .thinking-step {
+            margin-bottom: 4px;
+            padding-left: 12px;
+            position: relative;
+        }
+
+        .thinking-step::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: #8b5cf6;
+        }
+
+        .reflection-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-left: 4px;
+        }
+
+        .memory-container {
+            margin-top: 8px;
+            padding: 12px;
+            background: rgba(34, 197, 94, 0.1);
+            border-radius: 10px;
+            border-left: 3px solid #22c55e;
+        }
+
+        .memory-label {
+            font-size: 11px;
+            color: #86efac;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .memory-content {
+            font-size: 12px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+
+        .memory-item {
+            margin-bottom: 4px;
+            padding-left: 12px;
+            position: relative;
+        }
+
+        .memory-item::before {
+            content: '📝';
+            position: absolute;
+            left: 0;
+            font-size: 10px;
         }
 
         .input-container {
@@ -542,6 +753,14 @@
                 <span class="stat-label">工具调用</span>
                 <span class="stat-value" id="stat-tools">0</span>
             </div>
+            <div class="stat-item">
+                <span class="stat-label">短期记忆</span>
+                <span class="stat-value" id="stat-short-memory">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">长期记忆</span>
+                <span class="stat-value" id="stat-long-memory">0</span>
+            </div>
         </div>
 
         <div class="sidebar-actions">
@@ -694,18 +913,21 @@
             if (role === 'assistant') {
                 contentDiv.innerHTML = markdownToHtml(content);
                 
-                if (options.thinking) {
-                    const thinkingBadge = document.createElement('div');
-                    thinkingBadge.className = 'thinking-badge';
-                    thinkingBadge.innerHTML = '🤔 ' + options.thinking;
-                    messageDiv.insertBefore(thinkingBadge, header.nextSibling);
-                }
+                
 
-                if (options.toolInfo) {
-                    const toolResult = document.createElement('div');
-                    toolResult.className = 'tool-result';
-                    toolResult.textContent = `工具调用：${options.toolInfo.tool_name}\n参数：${JSON.stringify(options.toolInfo.parameters)}\n结果：${options.toolInfo.result}`;
-                    contentDiv.appendChild(toolResult);
+                if (options.toolInfo && options.toolInfo.length > 0) {
+                    options.toolInfo.forEach((toolCall, index) => {
+                        const toolResult = document.createElement('div');
+                        toolResult.className = 'tool-result';
+                        let resultText = `工具调用：${toolCall.tool_name || 'undefined'}\n`;
+                        resultText += `参数：${JSON.stringify(toolCall.parameters || {})}\n`;
+                        resultText += `结果：${toolCall.result || ''}`;
+                        if (toolCall.is_reflection) {
+                            resultText += '\n（反思后重试）';
+                        }
+                        toolResult.textContent = resultText;
+                        contentDiv.appendChild(toolResult);
+                    });
                 }
             } else {
                 contentDiv.textContent = content;
@@ -732,6 +954,52 @@
                 statsDiv.innerHTML = statsHtml;
                 messageDiv.appendChild(statsDiv);
             }
+            
+            if (role === 'assistant' && options.thinking && options.thinking.length > 0) {
+                const thinkingContainer = document.createElement('div');
+                thinkingContainer.className = 'thinking-container';
+                
+                let thinkingHtml = '<div class="thinking-label">🧠 思考过程</div>';
+                thinkingHtml += '<div class="thinking-steps">';
+                
+                options.thinking.forEach(step => {
+                    thinkingHtml += `<div class="thinking-step">${step}</div>`;
+                });
+                
+                thinkingHtml += '</div>';
+                thinkingContainer.innerHTML = thinkingHtml;
+                messageDiv.appendChild(thinkingContainer);
+            }
+            
+            if (role === 'assistant' && options.memory && options.memory.used) {
+                const memoryContainer = document.createElement('div');
+                memoryContainer.className = 'memory-container';
+                
+                let memoryHtml = '<div class="memory-label">💾 使用记忆</div>';
+                memoryHtml += '<div class="memory-content">';
+                
+                if (options.memory.short_term && options.memory.short_term.length > 0) {
+                    memoryHtml += '<div style="margin-bottom: 8px;"><strong>短期记忆：</strong></div>';
+                    options.memory.short_term.forEach(summary => {
+                        memoryHtml += `<div class="memory-item">${summary.summary}</div>`;
+                    });
+                }
+                
+                if (options.memory.long_term && options.memory.long_term.length > 0) {
+                    if (options.memory.short_term && options.memory.short_term.length > 0) {
+                        memoryHtml += '<br>';
+                    }
+                    memoryHtml += '<div style="margin-bottom: 8px;"><strong>长期记忆：</strong></div>';
+                    options.memory.long_term.forEach(memory => {
+                        memoryHtml += `<div class="memory-item">${memory.content}</div>`;
+                    });
+                }
+                
+                memoryHtml += '</div>';
+                memoryContainer.innerHTML = memoryHtml;
+                messageDiv.appendChild(memoryContainer);
+            }
+            
             chatContainer.appendChild(messageDiv);
             scrollToBottom();
             updateStats();
@@ -781,11 +1049,45 @@
 
         function markdownToHtml(text) {
             let html = text;
+            
             html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
             html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            
             html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            
+            html = html.replace(/^(-|\*|\+)\s+(.+)$/gm, '<li>$2</li>');
+            html = html.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
+            
+            html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>\d+\..+<\/li>)/g, '<ol>$1</ol>');
+            
+            html = html.replace(/^\s*---\s*$/gm, '<hr>');
+            
+            html = html.replace(/^>\s*(.+)$/gm, '<blockquote>$1</blockquote>');
+            
+            html = html.replace(/(\|.*\|)/g, function(match) {
+                let parts = match.split('|').filter(p => p.trim());
+                if (parts.length > 1) {
+                    let isHeader = match.includes(':---') || match.includes('---');
+                    if (isHeader) {
+                        return '<tr>' + parts.map(p => '<th>' + p.trim() + '</th>').join('') + '</tr>';
+                    } else {
+                        return '<tr>' + parts.map(p => '<td>' + p.trim() + '</td>').join('') + '</tr>';
+                    }
+                }
+                return match;
+            });
+            html = html.replace(/(<tr>[\s\S]*?<\/tr>)/g, '<table>$1</table>');
+            
             html = html.replace(/\n/g, '<br>');
+            
             return html;
         }
 
@@ -827,6 +1129,7 @@
                 addMessage('assistant', data.content, {
                     thinking: data.thinking,
                     toolInfo: data.tool_info,
+                    memory: data.memory_context,
                     stats: {
                         tokens_per_second: data.tokens_per_second,
                         completion_tokens: data.completion_tokens,
@@ -877,6 +1180,18 @@
         function updateStats() {
             document.getElementById('stat-messages').textContent = messages.length;
             document.getElementById('stat-tools').textContent = toolCallCount;
+            loadMemoryStats();
+        }
+
+        async function loadMemoryStats() {
+            try {
+                const response = await fetch(`${API_BASE}/memory/stats`);
+                const data = await response.json();
+                document.getElementById('stat-short-memory').textContent = data.short_term_summaries || 0;
+                document.getElementById('stat-long-memory').textContent = data.long_term_memories || 0;
+            } catch (error) {
+                console.error('加载记忆统计失败:', error);
+            }
         }
 
         async function loadModelInfo() {
@@ -894,6 +1209,7 @@
         }
 
         loadModelInfo();
+        loadMemoryStats();
     </script>
 </body>
 </html>

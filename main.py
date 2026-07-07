@@ -6,6 +6,7 @@ import json
 
 from session_manager import session_manager
 from context_manager import truncate_messages, calculate_messages_tokens
+from backend.memory import memory_manager
 
 app = FastAPI()
 
@@ -163,6 +164,48 @@ async def health():
         return {"status": "error", "message": "无法连接到llama.cpp服务器"}
     finally:
         conn.close()
+
+
+@app.get("/api/memory/stats")
+async def get_memory_stats():
+    return memory_manager.get_stats()
+
+
+@app.get("/api/memory")
+async def get_all_memories():
+    return memory_manager.get_all_memories()
+
+
+@app.post("/api/memory")
+async def add_memory(request: Request):
+    data = await request.json()
+    content = data.get('content', '')
+    category = data.get('category', 'general')
+    metadata = data.get('metadata', {})
+    
+    if not content:
+        return {"error": "内容不能为空"}
+    
+    memory_id = memory_manager.add_long_term_memory(content, category, metadata)
+    return {"memory_id": memory_id}
+
+
+@app.delete("/api/memory/{memory_id}")
+async def delete_memory(memory_id: str):
+    success = memory_manager.long_term.delete_memory(memory_id)
+    return {"success": success}
+
+
+@app.get("/api/memory/search")
+async def search_memories(query: str, top_k: int = 5):
+    results = memory_manager.retrieve_relevant_memories(query, top_k)
+    return {"results": results}
+
+
+@app.delete("/api/memory")
+async def clear_all_memories():
+    memory_manager.clear_all()
+    return {"success": True}
 
 
 if __name__ == "__main__":
