@@ -1,23 +1,39 @@
+import json
+import os
+from typing import Any, Dict, Optional
+
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import http.client
-import json
-
-from session_manager import session_manager
-from context_manager import truncate_messages, calculate_messages_tokens
-from backend.memory import memory_manager
-
-app = FastAPI()
-
-LLAMA_CPP_URL = "http://192.168.0.201:8081"
 
 from backend.agent import Agent
-agent = Agent(llama_cpp_url=LLAMA_CPP_URL)
+from backend.memory import memory_manager
+from backend.providers import LLMError, list_providers, llm_client
+from context_manager import calculate_messages_tokens, truncate_messages
+from session_manager import session_manager
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+app = FastAPI()
+agent = Agent()
 templates = Jinja2Templates(directory="templates")
-
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "llama_cpp")
+
+
+def _extract_llm_options(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "provider": data.get("provider", DEFAULT_PROVIDER),
+        "model": data.get("model"),
+        "api_key": data.get("api_key"),
+        "base_url": data.get("base_url"),
+    }
 
 
 @app.get("/")
@@ -39,7 +55,7 @@ async def get_session(session_id: str):
             "session_id": session.session_id,
             "messages": session.messages,
             "created_at": session.created_at.isoformat(),
-            "last_active": session.last_active.isoformat()
+            "last_active": session.last_active.isoformat(),
         }
     return {"error": "会话不存在"}
 
@@ -50,120 +66,96 @@ async def delete_session(session_id: str):
     return {"success": success}
 
 
-def get_host_port():
-    import urllib.parse
-    parsed = urllib.parse.urlparse(LLAMA_CPP_URL)
-    return parsed.hostname, parsed.port or 80
+@app.get("/api/providers")
+async def get_providers():
+    return {"providers": list_providers(), "default_provider": DEFAULT_PROVIDER}
 
 
-@app.post("/api/completions")
-async def completions(request: Request):
-    data = await request.json()
-    
-    host, port = get_host_port()
-    conn = http.client.HTTPConnection(host, port, timeout=300)
-    
-    try:
-        conn.request('POST', '/completion', json.dumps(data), {'Content-Type': 'application/json'})
-        response = conn.getresponse()
-        content = response.read().decode('utf-8')
-        return json.loads(content)
-    finally:
-        conn.close()
+@app.get("/api/models")
+async def models(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    model_list = llm_client.list_models(provider_id=provider, api_key=api_key, base_url=base_url)
+    return {"models": model_list, "provider": provider}
 
 
 @app.post("/api/chat")
 async def chat(request: Request):
     data = await request.json()
-    
-    import time
-    start_time = time.time()
-    
-    messages = data.get('messages', [])
-    max_tokens = data.get('max_tokens', 2048)
-    
+    llm_opts = _extract_llm_options(data)
+
+    messages = data.get("messages", [])
+    max_tokens = data.get("max_tokens", 2048)
     truncated_messages = truncate_messages(messages, max_tokens)
-    data['messages'] = truncated_messages
-    
-    host, port = get_host_port()
-    conn = http.client.HTTPConnection(host, port, timeout=300)
-    
+
     try:
-        conn.request('POST', '/chat/completions', json.dumps(data), {'Content-Type': 'application/json'})
-        response = conn.getresponse()
-        content = response.read().decode('utf-8')
-        elapsed_time = time.time() - start_time
-        result = json.loads(content)
-        
-        if 'usage' in result and 'completion_tokens' in result['usage']:
-            completion_tokens = result['usage']['completion_tokens']
-            tokens_per_second = round(completion_tokens / elapsed_time, 2) if elapsed_time > 0 else 0
-            result['tokens_per_second'] = tokens_per_second
-            result['response_time'] = round(elapsed_time, 2)
-        
-        result['context_tokens'] = calculate_messages_tokens(truncated_messages)
-        result['original_messages_count'] = len(messages)
-        result['truncated_messages_count'] = len(truncated_messages)
-        
-        return result
-    finally:
-        conn.close()
+        result = llm_client.chat_completion(
+            messages=truncated_messages,
+            provider_id=llm_opts["provider"],
+            model=llm_opts["model"],
+            max_tokens=max_tokens,
+            api_key=llm_opts["api_key"],
+            base_url=llm_opts["base_url"],
+        )
+        return {
+            "content": result["content"],
+            "choices": [{"message": {"role": "assistant", "content": result["content"]}}],
+            "usage": {
+                "completion_tokens": result["completion_tokens"],
+                "prompt_tokens": result["prompt_tokens"],
+                "total_tokens": result["total_tokens"],
+            },
+            "tokens_per_second": result["tokens_per_second"],
+            "response_time": result["response_time"],
+            "context_tokens": calculate_messages_tokens(truncated_messages),
+            "original_messages_count": len(messages),
+            "truncated_messages_count": len(truncated_messages),
+            "provider": result["provider"],
+            "model": result["model"],
+        }
+    except LLMError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": str(exc), "provider": exc.provider},
+        )
 
 
 @app.post("/api/agent")
 async def agent_chat(request: Request):
     data = await request.json()
-    
-    import time
-    start_time = time.time()
-    
-    messages = data.get('messages', [])
-    max_tokens = data.get('max_tokens', 2048)
-    
-    result = agent.run(messages, max_tokens)
-    elapsed_time = time.time() - start_time
-    
-    result['response_time'] = round(elapsed_time, 2)
-    
-    return result
+    llm_opts = _extract_llm_options(data)
+
+    messages = data.get("messages", [])
+    max_tokens = data.get("max_tokens", 2048)
+
+    try:
+        result = agent.run(
+            messages,
+            max_tokens=max_tokens,
+            provider=llm_opts["provider"],
+            model=llm_opts["model"],
+            api_key=llm_opts["api_key"],
+            base_url=llm_opts["base_url"],
+        )
+        return result
+    except LLMError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": str(exc), "provider": exc.provider},
+        )
 
 
 @app.get("/api/tools")
 async def get_tools():
     from backend.tools.base import tool_registry
+
     return {"tools": tool_registry.get_tools_list()}
 
 
-@app.get("/api/models")
-async def models():
-    host, port = get_host_port()
-    conn = http.client.HTTPConnection(host, port, timeout=30)
-    
-    try:
-        conn.request('GET', '/models')
-        response = conn.getresponse()
-        content = response.read().decode('utf-8')
-        return json.loads(content)
-    except:
-        return {"error": "无法连接到llama.cpp服务器"}
-    finally:
-        conn.close()
-
-
 @app.get("/api/health")
-async def health():
-    host, port = get_host_port()
-    conn = http.client.HTTPConnection(host, port, timeout=30)
-    
-    try:
-        conn.request('GET', '/health')
-        response = conn.getresponse()
-        content = response.read().decode('utf-8')
-        return {"status": "ok", "llama_cpp": json.loads(content)}
-    except:
-        return {"status": "error", "message": "无法连接到llama.cpp服务器"}
-    finally:
-        conn.close()
+async def health(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    result = llm_client.health_check(provider_id=provider, api_key=api_key, base_url=base_url)
+    if result["status"] == "ok":
+        return {"status": "ok", "provider": provider, "detail": result}
+    return {"status": "error", "message": result.get("message", "连接失败"), "provider": provider}
 
 
 @app.get("/api/memory/stats")
@@ -179,13 +171,13 @@ async def get_all_memories():
 @app.post("/api/memory")
 async def add_memory(request: Request):
     data = await request.json()
-    content = data.get('content', '')
-    category = data.get('category', 'general')
-    metadata = data.get('metadata', {})
-    
+    content = data.get("content", "")
+    category = data.get("category", "general")
+    metadata = data.get("metadata", {})
+
     if not content:
         return {"error": "内容不能为空"}
-    
+
     memory_id = memory_manager.add_long_term_memory(content, category, metadata)
     return {"memory_id": memory_id}
 
@@ -210,4 +202,5 @@ async def clear_all_memories():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000, timeout_keep_alive=300)

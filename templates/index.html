@@ -5,16 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jarvis Agent</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         html, body {
             height: 100%;
-            margin: 0;
-            padding: 0;
             overflow: hidden;
         }
 
@@ -24,6 +18,7 @@
             display: flex;
         }
 
+        /* Sidebar */
         .sidebar {
             width: 240px;
             min-width: 240px;
@@ -33,8 +28,6 @@
             flex-direction: column;
             padding: 20px;
             flex-shrink: 0;
-            position: relative;
-            z-index: 10;
         }
 
         .sidebar-header {
@@ -59,16 +52,8 @@
             color: white;
         }
 
-        .agent-info h2 {
-            font-size: 16px;
-            font-weight: 600;
-            color: white;
-        }
-
-        .agent-info p {
-            font-size: 12px;
-            color: #94a3b8;
-        }
+        .agent-info h2 { font-size: 16px; font-weight: 600; color: white; }
+        .agent-info p { font-size: 12px; color: #94a3b8; }
 
         .section-title {
             font-size: 11px;
@@ -79,10 +64,7 @@
             margin-bottom: 12px;
         }
 
-        .stats-panel {
-            flex: 1;
-            overflow-y: auto;
-        }
+        .stats-panel { flex: 1; overflow-y: auto; }
 
         .stat-item {
             display: flex;
@@ -133,6 +115,7 @@
             border-color: rgba(239, 68, 68, 0.4);
         }
 
+        /* Main */
         .main-content {
             flex: 1;
             display: flex;
@@ -144,17 +127,18 @@
         .header {
             background: rgba(30, 41, 59, 0.5);
             backdrop-filter: blur(10px);
-            padding: 16px 24px;
+            padding: 12px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid #334155;
+            gap: 12px;
         }
 
-        .header-left {
+        .header-left, .header-right {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .status-indicator {
@@ -162,56 +146,146 @@
             align-items: center;
             gap: 6px;
             font-size: 12px;
-            color: #22c55e;
+            color: #64748b;
         }
 
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
+            background: #64748b;
+        }
+
+        .status-indicator.online { color: #22c55e; }
+        .status-indicator.online .status-dot {
             background: #22c55e;
             animation: pulse 2s ease-in-out infinite;
         }
+
+        .status-indicator.offline { color: #f87171; }
+        .status-indicator.offline .status-dot { background: #f87171; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
         }
 
-        .model-badge {
+        .model-badge, .provider-badge {
             padding: 4px 12px;
             background: rgba(99, 102, 241, 0.15);
             border: 1px solid rgba(99, 102, 241, 0.3);
             border-radius: 20px;
             font-size: 12px;
             color: #a5b4fc;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
+        .provider-badge {
+            background: rgba(34, 197, 94, 0.12);
+            border-color: rgba(34, 197, 94, 0.3);
+            color: #86efac;
+            cursor: pointer;
+        }
+
+        .provider-badge:hover { background: rgba(34, 197, 94, 0.2); }
+
+        .provider-badge.cloud {
+            background: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+
+        .form-hint {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        .api-key-status {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            margin-left: 8px;
+        }
+
+        .api-key-status.ok { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+        .api-key-status.missing { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+        .settings-section {
+            font-size: 13px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin: 18px 0 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .settings-section:first-child { margin-top: 0; }
+
+        .mode-toggle {
+            display: flex;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #334155;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .mode-btn {
+            padding: 6px 14px;
+            font-size: 12px;
+            color: #94a3b8;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: rgba(99, 102, 241, 0.3);
+            color: #e2e8f0;
+        }
+
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #334155;
+            border-radius: 10px;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            color: #e2e8f0;
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        /* Chat */
         .chat-container {
             flex: 1;
             overflow-y: auto;
-            overflow-x: hidden;
             padding: 24px;
             background: #0f172a;
             min-height: 0;
         }
 
-        .chat-container::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .chat-container::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 3px;
-        }
+        .chat-container::-webkit-scrollbar { width: 6px; }
+        .chat-container::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
 
         .message {
             margin-bottom: 20px;
             animation: fadeIn 0.3s ease-out;
+            position: relative;
         }
 
         @keyframes fadeIn {
@@ -233,25 +307,32 @@
             border-radius: 10px;
         }
 
-        .message-role.user {
-            background: rgba(99, 102, 241, 0.2);
-            color: #a5b4fc;
+        .message-role.user { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .message-role.assistant { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+
+        .message-time { font-size: 11px; color: #64748b; }
+
+        .message-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
         }
 
-        .message-role.assistant {
-            background: rgba(34, 197, 94, 0.2);
-            color: #86efac;
-        }
+        .message:hover .message-actions { opacity: 1; }
 
-        .message-role.tool {
-            background: rgba(249, 115, 22, 0.2);
-            color: #fdba74;
-        }
-
-        .message-time {
+        .msg-action-btn {
+            padding: 2px 8px;
             font-size: 11px;
-            color: #64748b;
+            background: rgba(51, 65, 85, 0.6);
+            border: 1px solid #475569;
+            border-radius: 6px;
+            color: #94a3b8;
+            cursor: pointer;
         }
+
+        .msg-action-btn:hover { color: #e2e8f0; border-color: #6366f1; }
 
         .message-content {
             padding: 14px 18px;
@@ -277,156 +358,33 @@
             max-width: 80%;
         }
 
-        .message.tool .message-content {
-            background: rgba(249, 115, 22, 0.1);
-            border: 1px dashed rgba(249, 115, 22, 0.3);
-            max-width: 80%;
-        }
+        .message-content h1 { font-size: 20px; font-weight: 700; color: #f1f5f9; margin: 16px 0 8px; padding-bottom: 8px; border-bottom: 2px solid #475569; }
+        .message-content h2 { font-size: 18px; font-weight: 600; color: #f1f5f9; margin: 14px 0 6px; padding-bottom: 6px; border-bottom: 1px solid #475569; }
+        .message-content h3 { font-size: 16px; font-weight: 600; color: #cbd5e1; margin: 12px 0 4px; }
+        .message-content ul, .message-content ol { margin: 8px 0; padding-left: 24px; }
+        .message-content li { margin: 4px 0; color: #e2e8f0; }
+        .message-content code { background: rgba(15, 23, 42, 0.8); padding: 2px 6px; border-radius: 4px; font-family: 'SF Mono', monospace; font-size: 12px; color: #f87171; }
+        .message-content pre { background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; border: 1px solid #334155; position: relative; }
+        .message-content pre code { background: transparent; padding: 0; color: #e2e8f0; font-size: 12px; }
+        .message-content a { color: #60a5fa; text-decoration: none; }
+        .message-content a:hover { text-decoration: underline; }
+        .message-content strong { color: #f1f5f9; font-weight: 600; }
+        .message-content blockquote { border-left: 3px solid #8b5cf6; padding: 8px 16px; margin: 12px 0; background: rgba(139, 92, 246, 0.1); color: #c4b5fd; }
 
-        .message-content h1 {
-            font-size: 20px;
-            font-weight: 700;
-            color: #f1f5f9;
-            margin: 16px 0 8px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #475569;
-        }
-
-        .message-content h2 {
-            font-size: 18px;
-            font-weight: 600;
-            color: #f1f5f9;
-            margin: 14px 0 6px 0;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #475569;
-        }
-
-        .message-content h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #cbd5e1;
-            margin: 12px 0 4px 0;
-        }
-
-        .message-content ul, .message-content ol {
-            margin: 8px 0;
-            padding-left: 24px;
-        }
-
-        .message-content li {
-            margin: 4px 0;
-            color: #e2e8f0;
-        }
-
-        .message-content ul li {
-            list-style-type: disc;
-        }
-
-        .message-content ol li {
-            list-style-type: decimal;
-        }
-
-        .message-content table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 12px 0;
-            font-size: 13px;
-        }
-
-        .message-content th {
-            background: rgba(99, 102, 241, 0.2);
-            color: #a5b4fc;
-            padding: 8px 12px;
-            text-align: left;
+        .code-copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 2px 8px;
+            font-size: 10px;
+            background: rgba(51, 65, 85, 0.8);
             border: 1px solid #475569;
-            font-weight: 600;
-        }
-
-        .message-content td {
-            padding: 8px 12px;
-            border: 1px solid #475569;
-            color: #cbd5e1;
-        }
-
-        .message-content tr:nth-child(even) {
-            background: rgba(15, 23, 42, 0.5);
-        }
-
-        .message-content tr:hover {
-            background: rgba(99, 102, 241, 0.1);
-        }
-
-        .message-content hr {
-            border: none;
-            border-top: 1px dashed #475569;
-            margin: 16px 0;
-        }
-
-        .message-content blockquote {
-            border-left: 3px solid #8b5cf6;
-            padding: 8px 16px;
-            margin: 12px 0;
-            background: rgba(139, 92, 246, 0.1);
-            color: #c4b5fd;
-            font-style: italic;
-        }
-
-        .message-content a {
-            color: #60a5fa;
-            text-decoration: none;
-        }
-
-        .message-content a:hover {
-            text-decoration: underline;
-        }
-
-        .message-content code {
-            background: rgba(15, 23, 42, 0.8);
-            padding: 2px 6px;
             border-radius: 4px;
-            font-family: 'SF Mono', monospace;
-            font-size: 12px;
-            color: #f87171;
-        }
-
-        .message-content pre {
-            background: rgba(15, 23, 42, 0.9);
-            padding: 12px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 8px 0;
-            border: 1px solid #334155;
-        }
-
-        .message-content pre code {
-            background: transparent;
-            padding: 0;
-            color: #e2e8f0;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-
-        .message-content strong {
-            color: #f1f5f9;
-            font-weight: 600;
-        }
-
-        .message-content em {
-            color: #c4b5fd;
-            font-style: italic;
-        }
-
-        .thinking-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 10px;
-            background: rgba(148, 163, 184, 0.1);
-            border-radius: 12px;
-            font-size: 11px;
             color: #94a3b8;
-            margin-bottom: 8px;
+            cursor: pointer;
         }
+
+        .code-copy-btn:hover { color: #e2e8f0; }
 
         .tool-result {
             margin-top: 8px;
@@ -436,103 +394,96 @@
             font-size: 13px;
             color: #cbd5e1;
             font-family: 'SF Mono', monospace;
+            white-space: pre-wrap;
         }
 
         .message-stats {
             display: flex;
             gap: 16px;
             margin-top: 8px;
-            padding-left: 12px;
             font-size: 11px;
             color: #64748b;
             font-family: 'SF Mono', monospace;
         }
 
-        .thinking-container {
+        .collapsible {
             margin-top: 8px;
-            padding: 12px;
-            background: rgba(139, 92, 246, 0.1);
             border-radius: 10px;
-            border-left: 3px solid #8b5cf6;
+            overflow: hidden;
+            border: 1px solid rgba(139, 92, 246, 0.2);
         }
 
-        .thinking-label {
-            font-size: 11px;
-            color: #a78bfa;
+        .collapsible-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: rgba(139, 92, 246, 0.1);
+            cursor: pointer;
+            font-size: 12px;
             font-weight: 600;
-            margin-bottom: 6px;
+            color: #a78bfa;
+            user-select: none;
         }
 
-        .thinking-steps {
+        .collapsible-header .arrow {
+            transition: transform 0.2s;
+            font-size: 10px;
+        }
+
+        .collapsible.open .collapsible-header .arrow { transform: rotate(90deg); }
+
+        .collapsible-body {
+            display: none;
+            padding: 12px 14px;
             font-size: 12px;
             color: #cbd5e1;
             line-height: 1.6;
+            background: rgba(15, 23, 42, 0.5);
         }
 
-        .thinking-step {
-            margin-bottom: 4px;
-            padding-left: 12px;
+        .collapsible.open .collapsible-body { display: block; }
+
+        .thinking-step, .memory-item {
+            margin-bottom: 6px;
+            padding-left: 14px;
             position: relative;
         }
 
-        .thinking-step::before {
-            content: '•';
-            position: absolute;
-            left: 0;
-            color: #8b5cf6;
-        }
+        .thinking-step::before { content: '•'; position: absolute; left: 0; color: #8b5cf6; }
+        .memory-item::before { content: '📝'; position: absolute; left: 0; font-size: 10px; }
 
-        .reflection-indicator {
+        .reflection-tag {
             display: inline-block;
-            padding: 2px 8px;
+            padding: 1px 6px;
             background: rgba(239, 68, 68, 0.2);
             color: #f87171;
             border-radius: 4px;
             font-size: 10px;
-            margin-left: 4px;
+            margin-left: 6px;
         }
 
-        .memory-container {
-            margin-top: 8px;
-            padding: 12px;
-            background: rgba(34, 197, 94, 0.1);
-            border-radius: 10px;
-            border-left: 3px solid #22c55e;
-        }
-
-        .memory-label {
-            font-size: 11px;
-            color: #86efac;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-
-        .memory-content {
-            font-size: 12px;
-            color: #cbd5e1;
-            line-height: 1.6;
-        }
-
-        .memory-item {
-            margin-bottom: 4px;
-            padding-left: 12px;
-            position: relative;
-        }
-
-        .memory-item::before {
-            content: '📝';
-            position: absolute;
-            left: 0;
-            font-size: 10px;
-        }
-
-        .input-container {
-            padding: 20px 24px;
+        /* Input */
+        .input-area {
+            padding: 16px 24px 20px;
             background: rgba(30, 41, 59, 0.5);
             backdrop-filter: blur(10px);
             border-top: 1px solid #334155;
+        }
+
+        .input-toolbar {
             display: flex;
-            gap: 12px;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
         }
 
         .input-container textarea {
@@ -547,8 +498,9 @@
             outline: none;
             transition: all 0.2s;
             min-height: 52px;
-            max-height: 160px;
+            max-height: 200px;
             font-family: inherit;
+            line-height: 1.5;
         }
 
         .input-container textarea:focus {
@@ -556,24 +508,26 @@
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
 
-        .input-container textarea::placeholder {
-            color: #64748b;
-        }
+        .input-container textarea::placeholder { color: #64748b; }
 
-        .send-btn {
-            padding: 14px 28px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white;
+        .btn-group { display: flex; gap: 8px; flex-shrink: 0; }
+
+        .send-btn, .stop-btn {
+            padding: 14px 20px;
             border: none;
             border-radius: 14px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
-            flex-shrink: 0;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
         }
 
         .send-btn:hover:not(:disabled) {
@@ -581,10 +535,16 @@
             box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
         }
 
-        .send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .stop-btn {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            display: none;
         }
+
+        .stop-btn.visible { display: flex; }
 
         .typing-indicator {
             display: flex;
@@ -604,7 +564,6 @@
             animation: typing 1.4s infinite ease-in-out;
         }
 
-        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
@@ -613,28 +572,46 @@
             40% { transform: scale(1); opacity: 1; }
         }
 
+        /* Empty state */
         .empty-state {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 50%;
+            height: 60%;
             color: #64748b;
             text-align: center;
         }
 
-        .empty-state h3 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: white;
+        .empty-state h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: white; }
+        .empty-state p { font-size: 14px; max-width: 400px; margin-bottom: 24px; }
+
+        .quick-prompts {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 600px;
         }
 
-        .empty-state p {
-            font-size: 14px;
-            max-width: 300px;
+        .prompt-chip {
+            padding: 10px 16px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 20px;
+            font-size: 13px;
+            color: #a5b4fc;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
+        .prompt-chip:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-1px);
+        }
+
+        /* Tools sidebar */
         .tools-sidebar {
             width: 220px;
             min-width: 220px;
@@ -644,14 +621,9 @@
             flex-direction: column;
             padding: 20px;
             flex-shrink: 0;
-            position: relative;
-            z-index: 10;
         }
 
-        .tools-panel {
-            flex: 1;
-            overflow-y: auto;
-        }
+        .tools-panel { flex: 1; overflow-y: auto; }
 
         .tool-item {
             display: flex;
@@ -669,7 +641,6 @@
         .tool-item:hover {
             background: rgba(99, 102, 241, 0.15);
             border-color: rgba(99, 102, 241, 0.4);
-            transform: translateX(-2px);
         }
 
         .tool-icon {
@@ -680,56 +651,218 @@
             align-items: center;
             justify-content: center;
             font-size: 16px;
+            background: rgba(99, 102, 241, 0.15);
         }
 
-        .tool-icon.calculator { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-        .tool-icon.search { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-        .tool-icon.weather { background: rgba(249, 115, 22, 0.15); color: #f97316; }
-        .tool-icon.file { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
-        .tool-icon.clock { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+        .tool-name { font-size: 13px; font-weight: 600; color: white; }
+        .tool-desc { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 
-        .tool-name {
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 520px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 22px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .modal-header h3 { font-size: 16px; color: white; }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .modal-close:hover { color: white; }
+
+        .modal-body {
+            padding: 20px 22px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 14px 22px;
+            border-top: 1px solid #334155;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
+
+        .form-group input[type="range"] { width: 100%; accent-color: #6366f1; }
+
+        .range-value { font-size: 13px; color: #e2e8f0; font-weight: 600; }
+
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #334155;
+            border-radius: 10px;
+            color: white;
             font-size: 13px;
-            font-weight: 600;
+            outline: none;
+            font-family: inherit;
+        }
+
+        .form-textarea { min-height: 80px; resize: vertical; }
+
+        .form-input:focus, .form-textarea:focus { border-color: #6366f1; }
+
+        .modal-btn {
+            padding: 8px 18px;
+            border-radius: 10px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #334155;
+            background: rgba(15, 23, 42, 0.8);
+            color: #e2e8f0;
+        }
+
+        .modal-btn.primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
             color: white;
         }
 
-        .tool-desc {
-            font-size: 11px;
+        .modal-btn.danger { color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+
+        .memory-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .memory-card {
+            padding: 12px 14px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid #334155;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
+        .memory-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .memory-category {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: rgba(34, 197, 94, 0.15);
+            color: #86efac;
+        }
+
+        .memory-delete {
+            background: none;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .memory-delete:hover { color: #f87171; }
+
+        .memory-text { color: #cbd5e1; line-height: 1.5; }
+
+        .empty-memory {
+            text-align: center;
+            color: #64748b;
+            padding: 30px;
+            font-size: 13px;
+        }
+
+        .memory-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .memory-tab {
+            padding: 6px 14px;
+            font-size: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: transparent;
             color: #94a3b8;
-            margin-top: 2px;
+            cursor: pointer;
+        }
+
+        .memory-tab.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 10px 20px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            color: #e2e8f0;
+            font-size: 13px;
+            animation: toastIn 0.3s ease;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @media (max-width: 1024px) {
-            .tools-sidebar {
-                width: 180px;
-            }
-            .sidebar {
-                width: 200px;
-            }
+            .tools-sidebar { width: 180px; }
+            .sidebar { width: 200px; }
         }
 
         @media (max-width: 768px) {
-            .tools-sidebar {
-                display: none;
-            }
-            .sidebar {
-                width: 60px;
-                min-width: 60px;
-                padding: 10px;
-            }
-            .agent-info {
-                display: none;
-            }
-            .section-title, .stat-label {
-                display: none;
-            }
-            .stat-item {
-                justify-content: center;
-            }
-            .message-content {
-                font-size: 13px;
-            }
+            .tools-sidebar { display: none; }
+            .sidebar { width: 60px; min-width: 60px; padding: 10px; }
+            .agent-info, .section-title, .stat-label, .sidebar-btn span { display: none; }
+            .mode-toggle { display: none; }
         }
     </style>
 </head>
@@ -739,7 +872,7 @@
             <div class="avatar">J</div>
             <div class="agent-info">
                 <h2>Jarvis Agent</h2>
-                <p>智能助手 v1.0</p>
+                <p>智能助手 v1.2</p>
             </div>
         </div>
 
@@ -761,22 +894,28 @@
                 <span class="stat-label">长期记忆</span>
                 <span class="stat-value" id="stat-long-memory">0</span>
             </div>
+            <div class="stat-item">
+                <span class="stat-label">上下文</span>
+                <span class="stat-value" id="stat-context">0 tokens</span>
+            </div>
         </div>
 
         <div class="sidebar-actions">
             <button class="sidebar-btn" onclick="newSession()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                新会话
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>新会话</span>
+            </button>
+            <button class="sidebar-btn" onclick="openMemoryPanel()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"></path><path d="M12 6v6l4 2"></path></svg>
+                <span>记忆管理</span>
+            </button>
+            <button class="sidebar-btn" onclick="exportChat()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>导出对话</span>
             </button>
             <button class="sidebar-btn danger" onclick="clearChat()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                清空对话
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>清空对话</span>
             </button>
         </div>
     </div>
@@ -784,102 +923,503 @@
     <div class="main-content">
         <div class="header">
             <div class="header-left">
-                <div class="status-indicator">
+                <div class="status-indicator" id="status-indicator">
                     <div class="status-dot"></div>
-                    <span>已连接</span>
+                    <span id="status-text">检测中...</span>
                 </div>
+                <span class="provider-badge" id="provider-badge" onclick="openSettings()" title="点击切换模型">加载中...</span>
                 <span class="model-badge" id="model-badge">模型加载中...</span>
             </div>
-        </div>
-
-        <div class="chat-container" id="chat-container">
-            <div class="empty-state">
-                <h3>欢迎使用 Jarvis Agent</h3>
-                <p>我是您的智能助手，可以帮助您完成各种任务。试试让我计算、搜索或查询天气吧！</p>
+            <div class="header-right">
+                <div class="mode-toggle">
+                    <button class="mode-btn" id="mode-chat" onclick="setMode('chat')">普通聊天</button>
+                    <button class="mode-btn active" id="mode-agent" onclick="setMode('agent')">Agent</button>
+                </div>
+                <button class="icon-btn" onclick="openSettings()" title="设置">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
             </div>
         </div>
 
-        <div class="input-container">
-            <textarea id="message-input" placeholder="输入您的问题，或点击右侧工具..." onkeydown="handleKeyDown(event)"></textarea>
-            <button class="send-btn" id="send-btn" onclick="sendMessage()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-                发送
-            </button>
+        <div class="chat-container" id="chat-container"></div>
+
+        <div class="input-area">
+            <div class="input-toolbar">
+                <span id="mode-hint">Agent 模式：支持工具调用、思考过程与记忆</span>
+                <span id="char-count">0 字</span>
+            </div>
+            <div class="input-container">
+                <textarea id="message-input" placeholder="输入您的问题，Enter 发送，Shift+Enter 换行..." onkeydown="handleKeyDown(event)" oninput="onInputChange()"></textarea>
+                <div class="btn-group">
+                    <button class="stop-btn" id="stop-btn" onclick="stopGeneration()">停止</button>
+                    <button class="send-btn" id="send-btn" onclick="sendMessage()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        发送
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="tools-sidebar">
         <div class="section-title">可用工具</div>
-        <div class="tools-panel">
-            <div class="tool-item" onclick="insertTool('calculator')">
-                <div class="tool-icon calculator">🧮</div>
-                <div>
-                    <div class="tool-name">计算器</div>
-                    <div class="tool-desc">数学表达式计算</div>
+        <div class="tools-panel" id="tools-panel">
+            <div style="color:#64748b;font-size:12px;padding:12px;">加载中...</div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>设置</h3>
+                <button class="modal-close" onclick="closeModal('settings-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">模型 Provider</div>
+                <div class="form-group">
+                    <label>选择 Provider</label>
+                    <select class="form-input" id="provider-select" onchange="onProviderChange()"></select>
+                    <div class="form-hint" id="provider-desc"></div>
+                </div>
+                <div class="form-group">
+                    <label>选择模型</label>
+                    <select class="form-input" id="model-select"></select>
+                </div>
+                <div class="form-group" id="api-key-group">
+                    <label>API Key <span class="api-key-status" id="api-key-status"></span></label>
+                    <input class="form-input" type="password" id="api-key-input" placeholder="留空则使用服务端环境变量中的 Key">
+                    <div class="form-hint">API Key 仅保存在浏览器本地，不会上传到除模型服务商以外的第三方</div>
+                </div>
+                <div class="form-group" id="custom-url-group" style="display:none;">
+                    <label>自定义 API 地址</label>
+                    <input class="form-input" id="custom-base-url" placeholder="https://your-api.com">
+                </div>
+
+                <div class="settings-section">对话设置</div>
+                <div class="form-group">
+                    <label>最大输出 Token 数：<span class="range-value" id="max-tokens-value">2048</span></label>
+                    <input type="range" id="max-tokens" min="256" max="4096" step="256" value="2048" oninput="document.getElementById('max-tokens-value').textContent=this.value">
+                </div>
+                <div class="form-group">
+                    <label>默认模式</label>
+                    <select class="form-input" id="default-mode">
+                        <option value="agent">Agent 模式</option>
+                        <option value="chat">普通聊天</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="auto-save" checked> 自动保存对话到本地</label>
                 </div>
             </div>
-            <div class="tool-item" onclick="insertTool('search')">
-                <div class="tool-icon search">🔍</div>
-                <div>
-                    <div class="tool-name">搜索</div>
-                    <div class="tool-desc">互联网信息检索</div>
-                </div>
-            </div>
-            <div class="tool-item" onclick="insertTool('weather')">
-                <div class="tool-icon weather">🌤️</div>
-                <div>
-                    <div class="tool-name">天气</div>
-                    <div class="tool-desc">城市天气查询</div>
-                </div>
-            </div>
-            <div class="tool-item" onclick="insertTool('file')">
-                <div class="tool-icon file">📁</div>
-                <div>
-                    <div class="tool-name">文件操作</div>
-                    <div class="tool-desc">读取/写入文件</div>
-                </div>
-            </div>
-            <div class="tool-item" onclick="insertTool('datetime')">
-                <div class="tool-icon clock">🕐</div>
-                <div>
-                    <div class="tool-name">日期时间</div>
-                    <div class="tool-desc">时间查询/定时器</div>
-                </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('settings-modal')">取消</button>
+                <button class="modal-btn primary" onclick="saveSettings()">保存</button>
             </div>
         </div>
     </div>
 
+    <!-- Memory Modal -->
+    <div class="modal-overlay" id="memory-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>记忆管理</h3>
+                <button class="modal-close" onclick="closeModal('memory-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="memory-tabs">
+                    <button class="memory-tab active" onclick="switchMemoryTab('long')">长期记忆</button>
+                    <button class="memory-tab" onclick="switchMemoryTab('short')">短期记忆</button>
+                    <button class="memory-tab" onclick="switchMemoryTab('add')">添加记忆</button>
+                </div>
+                <div id="memory-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn danger" onclick="clearAllMemories()">清空全部记忆</button>
+                <button class="modal-btn" onclick="closeModal('memory-modal')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
     <script>
         const API_BASE = '/api';
+        const STORAGE_KEY = 'jarvis_chat_state';
+        const SETTINGS_KEY = 'jarvis_settings';
+        const API_KEYS_KEY = 'jarvis_api_keys';
+
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
         const modelBadge = document.getElementById('model-badge');
-        
-        let isProcessing = false;
-        let messages = [];
-        let toolCallCount = 0;
 
-        function insertTool(toolName) {
-            const toolMap = {
-                'calculator': '使用计算器计算：',
-                'search': '搜索：',
-                'weather': '查询天气：',
-                'file': '文件操作：',
-                'datetime': '日期时间：'
-            };
-            messageInput.value = toolMap[toolName] || '';
-            messageInput.focus();
+        let isProcessing = false;
+        let abortController = null;
+        let messages = [];
+        let messageMeta = [];
+        let toolCallCount = 0;
+        let currentMode = 'agent';
+        let currentMemoryTab = 'long';
+        let lastContextTokens = 0;
+        let providers = [];
+        let currentProvider = 'llama_cpp';
+        let currentModel = '';
+
+        const TOOL_ICONS = {
+            calculator: '🧮', search: '🔍', weather: '🌤️',
+            file: '📁', datetime: '🕐'
+        };
+
+        const TOOL_PROMPTS = {
+            calculator: '帮我计算：',
+            search: '搜索一下：',
+            weather: '查询天气：',
+            file: '文件操作：',
+            datetime: '现在几点了？'
+        };
+
+        const QUICK_PROMPTS = [
+            '帮我计算 123 × 456',
+            '北京今天天气怎么样？',
+            '搜索人工智能最新进展',
+            '现在几点了？',
+            '用 Python 写一个快速排序',
+            '总结一下量子计算的基本原理'
+        ];
+
+        // --- Init ---
+        function init() {
+            loadSettings();
+            loadChatState();
+            renderEmptyState();
+            loadTools();
+            loadProviders().then(() => {
+                updateModelBadge();
+                checkHealth();
+            });
+            setInterval(checkHealth, 30000);
+            updateStats();
         }
 
+        function getApiKeys() {
+            try {
+                return JSON.parse(localStorage.getItem(API_KEYS_KEY) || '{}');
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveApiKey(providerId, key) {
+            const keys = getApiKeys();
+            if (key) keys[providerId] = key;
+            else delete keys[providerId];
+            localStorage.setItem(API_KEYS_KEY, JSON.stringify(keys));
+        }
+
+        function getApiKey(providerId) {
+            return getApiKeys()[providerId] || '';
+        }
+
+        function getLLMOptions() {
+            const opts = {
+                provider: currentProvider,
+                model: currentModel || undefined,
+            };
+            const apiKey = getApiKey(currentProvider);
+            if (apiKey) opts.api_key = apiKey;
+            if (currentProvider === 'custom') {
+                const url = document.getElementById('custom-base-url')?.value || localStorage.getItem('jarvis_custom_url');
+                if (url) opts.base_url = url;
+            }
+            return opts;
+        }
+
+        function loadSettings() {
+            try {
+                const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+                if (s.maxTokens) {
+                    document.getElementById('max-tokens').value = s.maxTokens;
+                    document.getElementById('max-tokens-value').textContent = s.maxTokens;
+                }
+                if (s.defaultMode) setMode(s.defaultMode, false);
+                if (s.autoSave === false) document.getElementById('auto-save').checked = false;
+                if (s.provider) currentProvider = s.provider;
+                if (s.model) currentModel = s.model;
+                if (s.customBaseUrl) {
+                    localStorage.setItem('jarvis_custom_url', s.customBaseUrl);
+                }
+            } catch (e) {}
+        }
+
+        async function loadProviders() {
+            try {
+                const res = await fetch(`${API_BASE}/providers`);
+                const data = await res.json();
+                providers = data.providers || [];
+                if (!currentProvider && data.default_provider) {
+                    currentProvider = data.default_provider;
+                }
+                renderProviderSelect();
+                await loadModelsForProvider();
+            } catch (e) {
+                console.error('加载 Provider 失败', e);
+            }
+        }
+
+        function renderProviderSelect() {
+            const select = document.getElementById('provider-select');
+            if (!select) return;
+            select.innerHTML = providers.map(p => {
+                const status = p.api_key_configured || getApiKey(p.id) ? '✓' : (p.id === 'llama_cpp' ? '✓' : '需 Key');
+                return `<option value="${p.id}" ${p.id === currentProvider ? 'selected' : ''}>${p.name} (${status})</option>`;
+            }).join('');
+            updateProviderDesc();
+            updateApiKeyUI();
+        }
+
+        function updateProviderDesc() {
+            const p = providers.find(x => x.id === currentProvider);
+            const el = document.getElementById('provider-desc');
+            if (el) el.textContent = p?.description || '';
+        }
+
+        function updateApiKeyUI() {
+            const p = providers.find(x => x.id === currentProvider);
+            const keyGroup = document.getElementById('api-key-group');
+            const urlGroup = document.getElementById('custom-url-group');
+            const status = document.getElementById('api-key-status');
+            const keyInput = document.getElementById('api-key-input');
+            if (!keyGroup) return;
+
+            const needsKey = p && p.id !== 'llama_cpp';
+            keyGroup.style.display = needsKey ? 'block' : 'none';
+            urlGroup.style.display = p?.id === 'custom' ? 'block' : 'none';
+
+            if (needsKey && keyInput && status) {
+                keyInput.value = getApiKey(currentProvider);
+                const configured = p.api_key_configured || getApiKey(currentProvider);
+                status.textContent = configured ? '已配置' : '未配置';
+                status.className = 'api-key-status ' + (configured ? 'ok' : 'missing');
+            }
+
+            if (p?.id === 'custom') {
+                const urlInput = document.getElementById('custom-base-url');
+                if (urlInput) urlInput.value = localStorage.getItem('jarvis_custom_url') || '';
+            }
+        }
+
+        async function onProviderChange() {
+            currentProvider = document.getElementById('provider-select').value;
+            updateProviderDesc();
+            updateApiKeyUI();
+            await loadModelsForProvider();
+            updateModelBadge();
+            checkHealth();
+        }
+
+        async function loadModelsForProvider() {
+            const select = document.getElementById('model-select');
+            if (!select) return;
+            select.innerHTML = '<option>加载中...</option>';
+            const params = new URLSearchParams({ provider: currentProvider });
+            const apiKey = getApiKey(currentProvider);
+            if (apiKey) params.set('api_key', apiKey);
+            if (currentProvider === 'custom') {
+                const url = localStorage.getItem('jarvis_custom_url');
+                if (url) params.set('base_url', url);
+            }
+            try {
+                const res = await fetch(`${API_BASE}/models?${params}`);
+                const data = await res.json();
+                const models = data.models || [];
+                if (!models.length) {
+                    select.innerHTML = '<option value="">无可用模型</option>';
+                    currentModel = '';
+                    return;
+                }
+                select.innerHTML = models.map(m =>
+                    `<option value="${m.id}" ${m.id === currentModel ? 'selected' : ''}>${m.name}</option>`
+                ).join('');
+                if (!currentModel || !models.find(m => m.id === currentModel)) {
+                    currentModel = models[0].id;
+                    select.value = currentModel;
+                }
+            } catch (e) {
+                select.innerHTML = '<option value="">加载失败</option>';
+            }
+        }
+
+        function updateModelBadge() {
+            const p = providers.find(x => x.id === currentProvider);
+            const badge = document.getElementById('provider-badge');
+            const modelBadgeEl = document.getElementById('model-badge');
+            if (p && badge) {
+                badge.textContent = p.name;
+                badge.className = 'provider-badge' + (p.id === 'llama_cpp' ? '' : ' cloud');
+            }
+            if (modelBadgeEl) modelBadgeEl.textContent = currentModel || '默认模型';
+        }
+
+        function saveSettings() {
+            const selectedProvider = document.getElementById('provider-select').value;
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            saveApiKey(selectedProvider, apiKey);
+
+            currentProvider = selectedProvider;
+            currentModel = document.getElementById('model-select').value;
+
+            const customUrl = document.getElementById('custom-base-url')?.value.trim();
+            if (customUrl) localStorage.setItem('jarvis_custom_url', customUrl);
+
+            const settings = {
+                maxTokens: parseInt(document.getElementById('max-tokens').value),
+                defaultMode: document.getElementById('default-mode').value,
+                autoSave: document.getElementById('auto-save').checked,
+                provider: currentProvider,
+                model: currentModel,
+                customBaseUrl: customUrl || '',
+            };
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            setMode(settings.defaultMode, false);
+            updateModelBadge();
+            checkHealth();
+            closeModal('settings-modal');
+            showToast('设置已保存');
+        }
+
+        function getMaxTokens() {
+            return parseInt(document.getElementById('max-tokens').value) || 2048;
+        }
+
+        function setMode(mode, save = true) {
+            currentMode = mode;
+            document.getElementById('mode-chat').classList.toggle('active', mode === 'chat');
+            document.getElementById('mode-agent').classList.toggle('active', mode === 'agent');
+            document.getElementById('mode-hint').textContent = mode === 'agent'
+                ? 'Agent 模式：支持工具调用、思考过程与记忆'
+                : '普通聊天：直接对话，无工具调用';
+            if (save) saveChatState();
+        }
+
+        // --- Chat State Persistence ---
+        function saveChatState() {
+            if (!document.getElementById('auto-save').checked) return;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                messages, messageMeta, toolCallCount, currentMode, lastContextTokens
+            }));
+        }
+
+        function loadChatState() {
+            try {
+                const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+                if (!state || !state.messages?.length) return;
+                messages = state.messages;
+                messageMeta = state.messageMeta || [];
+                toolCallCount = state.toolCallCount || 0;
+                lastContextTokens = state.lastContextTokens || 0;
+                if (state.currentMode) setMode(state.currentMode, false);
+                chatContainer.innerHTML = '';
+                messages.forEach((msg, i) => {
+                    if (msg.role === 'user') {
+                        addMessageDOM('user', msg.content);
+                    } else if (msg.role === 'assistant') {
+                        addMessageDOM('assistant', msg.content, messageMeta[i] || {});
+                    }
+                });
+            } catch (e) {}
+        }
+
+        // --- Empty State ---
+        function renderEmptyState() {
+            if (messages.length > 0) return;
+            chatContainer.innerHTML = `
+                <div class="empty-state">
+                    <h3>欢迎使用 Jarvis Agent</h3>
+                    <p>我是您的智能助手，可以计算、搜索、查天气、管理文件。点击下方快捷指令开始对话：</p>
+                    <div class="quick-prompts">
+                        ${QUICK_PROMPTS.map(p => `<div class="prompt-chip" onclick="usePrompt('${p.replace(/'/g, "\\'")}')">${p}</div>`).join('')}
+                    </div>
+                </div>`;
+        }
+
+        function usePrompt(text) {
+            messageInput.value = text;
+            onInputChange();
+            sendMessage();
+        }
+
+        // --- Tools ---
+        async function loadTools() {
+            const panel = document.getElementById('tools-panel');
+            try {
+                const res = await fetch(`${API_BASE}/tools`);
+                const data = await res.json();
+                panel.innerHTML = (data.tools || []).map(t => `
+                    <div class="tool-item" onclick="insertTool('${t.name}')">
+                        <div class="tool-icon">${TOOL_ICONS[t.name] || '🔧'}</div>
+                        <div>
+                            <div class="tool-name">${t.name}</div>
+                            <div class="tool-desc">${t.description}</div>
+                        </div>
+                    </div>`).join('');
+            } catch (e) {
+                panel.innerHTML = '<div style="color:#f87171;font-size:12px;">加载工具失败</div>';
+            }
+        }
+
+        function insertTool(name) {
+            messageInput.value = TOOL_PROMPTS[name] || `使用 ${name}：`;
+            messageInput.focus();
+            onInputChange();
+        }
+
+        // --- Health & Model ---
+        async function checkHealth() {
+            const indicator = document.getElementById('status-indicator');
+            const text = document.getElementById('status-text');
+            const params = new URLSearchParams({ provider: currentProvider });
+            const apiKey = getApiKey(currentProvider);
+            if (apiKey) params.set('api_key', apiKey);
+            if (currentProvider === 'custom') {
+                const url = localStorage.getItem('jarvis_custom_url');
+                if (url) params.set('base_url', url);
+            }
+            try {
+                const res = await fetch(`${API_BASE}/health?${params}`);
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    indicator.className = 'status-indicator online';
+                    const p = providers.find(x => x.id === currentProvider);
+                    text.textContent = p ? `${p.name} 已连接` : '已连接';
+                } else {
+                    indicator.className = 'status-indicator offline';
+                    text.textContent = data.message || '未连接';
+                }
+            } catch (e) {
+                indicator.className = 'status-indicator offline';
+                text.textContent = '连接失败';
+            }
+        }
+
+        // --- Messages ---
         function scrollToBottom() {
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        function addMessage(role, content, options = {}) {
+        function createCollapsible(label, contentHtml, open = false) {
+            const div = document.createElement('div');
+            div.className = 'collapsible' + (open ? ' open' : '');
+            div.innerHTML = `
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="arrow">▶</span> ${label}
+                </div>
+                <div class="collapsible-body">${contentHtml}</div>`;
+            return div;
+        }
+
+        function addMessageDOM(role, content, options = {}) {
             const emptyState = chatContainer.querySelector('.empty-state');
             if (emptyState) emptyState.remove();
 
@@ -891,204 +1431,151 @@
 
             const roleBadge = document.createElement('span');
             roleBadge.className = `message-role ${role}`;
-            
-            const roleNames = {
-                'user': '用户',
-                'assistant': 'Jarvis',
-                'tool': '工具'
-            };
-            roleBadge.textContent = roleNames[role] || role;
+            roleBadge.textContent = role === 'user' ? '用户' : 'Jarvis';
 
             const time = document.createElement('span');
             time.className = 'message-time';
             const now = new Date();
-            time.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            time.textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+            const actions = document.createElement('div');
+            actions.className = 'message-actions';
+            actions.innerHTML = `<button class="msg-action-btn" onclick="copyMessage(this)">复制</button>`;
+            if (role === 'assistant' && messages.length > 0) {
+                actions.innerHTML += `<button class="msg-action-btn" onclick="regenerate()">重新生成</button>`;
+            }
 
             header.appendChild(roleBadge);
             header.appendChild(time);
+            header.appendChild(actions);
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
+            contentDiv.dataset.raw = content;
 
             if (role === 'assistant') {
                 contentDiv.innerHTML = markdownToHtml(content);
-                
-                
-
-                if (options.toolInfo && options.toolInfo.length > 0) {
-                    options.toolInfo.forEach((toolCall, index) => {
-                        const toolResult = document.createElement('div');
-                        toolResult.className = 'tool-result';
-                        let resultText = `工具调用：${toolCall.tool_name || 'undefined'}\n`;
-                        resultText += `参数：${JSON.stringify(toolCall.parameters || {})}\n`;
-                        resultText += `结果：${toolCall.result || ''}`;
-                        if (toolCall.is_reflection) {
-                            resultText += '\n（反思后重试）';
-                        }
-                        toolResult.textContent = resultText;
-                        contentDiv.appendChild(toolResult);
-                    });
-                }
+                attachCodeCopyButtons(contentDiv);
             } else {
                 contentDiv.textContent = content;
             }
 
             messageDiv.appendChild(header);
             messageDiv.appendChild(contentDiv);
-            
+
+            if (role === 'assistant' && options.toolInfo?.length) {
+                let toolHtml = options.toolInfo.map(t => {
+                    let s = `<strong>${t.tool_name}</strong>`;
+                    if (t.is_reflection) s += '<span class="reflection-tag">反思重试</span>';
+                    s += `<div class="tool-result">参数：${escapeHtml(JSON.stringify(t.parameters || {}))}\n\n${escapeHtml(t.result || '')}</div>`;
+                    return s;
+                }).join('<hr style="border-color:#334155;margin:8px 0;">');
+                messageDiv.appendChild(createCollapsible(`🛠️ 工具调用 (${options.toolInfo.length})`, toolHtml));
+            }
+
+            if (role === 'assistant' && options.thinking?.length) {
+                const thinkHtml = options.thinking.map(s => `<div class="thinking-step">${escapeHtml(s)}</div>`).join('');
+                messageDiv.appendChild(createCollapsible(`🧠 思考过程 (${options.thinking.length} 步)`, thinkHtml));
+            }
+
+            if (role === 'assistant' && options.memory?.used) {
+                let memHtml = '';
+                if (options.memory.short_term?.length) {
+                    memHtml += '<strong>短期记忆</strong><br>';
+                    options.memory.short_term.forEach(s => { memHtml += `<div class="memory-item">${escapeHtml(s.summary)}</div>`; });
+                }
+                if (options.memory.long_term?.length) {
+                    memHtml += '<strong>长期记忆</strong><br>';
+                    options.memory.long_term.forEach(m => { memHtml += `<div class="memory-item">${escapeHtml(m.content)}</div>`; });
+                }
+                messageDiv.appendChild(createCollapsible('💾 使用的记忆', memHtml));
+            }
+
             if (role === 'assistant' && options.stats) {
                 const statsDiv = document.createElement('div');
                 statsDiv.className = 'message-stats';
-                
-                let statsHtml = '';
-                if (options.stats.tokens_per_second !== undefined) {
-                    statsHtml += `<span>${options.stats.tokens_per_second} tokens/s</span>`;
-                }
-                if (options.stats.completion_tokens !== undefined) {
-                    statsHtml += `<span>${options.stats.completion_tokens} tokens</span>`;
-                }
-                if (options.stats.response_time !== undefined) {
-                    statsHtml += `<span>${options.stats.response_time}s</span>`;
-                }
-                
-                statsDiv.innerHTML = statsHtml;
+                const parts = [];
+                if (options.stats.tokens_per_second) parts.push(`${options.stats.tokens_per_second} tokens/s`);
+                if (options.stats.completion_tokens) parts.push(`${options.stats.completion_tokens} tokens`);
+                if (options.stats.response_time) parts.push(`${options.stats.response_time}s`);
+                if (options.stats.context_tokens) parts.push(`上下文 ${options.stats.context_tokens}`);
+                if (options.stats.provider) parts.push(options.stats.provider);
+                if (options.stats.model) parts.push(options.stats.model);
+                statsDiv.innerHTML = parts.map(p => `<span>${p}</span>`).join('');
                 messageDiv.appendChild(statsDiv);
             }
-            
-            if (role === 'assistant' && options.thinking && options.thinking.length > 0) {
-                const thinkingContainer = document.createElement('div');
-                thinkingContainer.className = 'thinking-container';
-                
-                let thinkingHtml = '<div class="thinking-label">🧠 思考过程</div>';
-                thinkingHtml += '<div class="thinking-steps">';
-                
-                options.thinking.forEach(step => {
-                    thinkingHtml += `<div class="thinking-step">${step}</div>`;
-                });
-                
-                thinkingHtml += '</div>';
-                thinkingContainer.innerHTML = thinkingHtml;
-                messageDiv.appendChild(thinkingContainer);
-            }
-            
-            if (role === 'assistant' && options.memory && options.memory.used) {
-                const memoryContainer = document.createElement('div');
-                memoryContainer.className = 'memory-container';
-                
-                let memoryHtml = '<div class="memory-label">💾 使用记忆</div>';
-                memoryHtml += '<div class="memory-content">';
-                
-                if (options.memory.short_term && options.memory.short_term.length > 0) {
-                    memoryHtml += '<div style="margin-bottom: 8px;"><strong>短期记忆：</strong></div>';
-                    options.memory.short_term.forEach(summary => {
-                        memoryHtml += `<div class="memory-item">${summary.summary}</div>`;
-                    });
-                }
-                
-                if (options.memory.long_term && options.memory.long_term.length > 0) {
-                    if (options.memory.short_term && options.memory.short_term.length > 0) {
-                        memoryHtml += '<br>';
-                    }
-                    memoryHtml += '<div style="margin-bottom: 8px;"><strong>长期记忆：</strong></div>';
-                    options.memory.long_term.forEach(memory => {
-                        memoryHtml += `<div class="memory-item">${memory.content}</div>`;
-                    });
-                }
-                
-                memoryHtml += '</div>';
-                memoryContainer.innerHTML = memoryHtml;
-                messageDiv.appendChild(memoryContainer);
-            }
-            
+
             chatContainer.appendChild(messageDiv);
             scrollToBottom();
+        }
+
+        function addMessage(role, content, options = {}) {
+            addMessageDOM(role, content, options);
             updateStats();
         }
 
-        function addTypingIndicator() {
-            const emptyState = chatContainer.querySelector('.empty-state');
-            if (emptyState) emptyState.remove();
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            messageDiv.id = 'typing-indicator';
-
-            const header = document.createElement('div');
-            header.className = 'message-header';
-            
-            const roleBadge = document.createElement('span');
-            roleBadge.className = 'message-role assistant';
-            roleBadge.textContent = 'Jarvis';
-
-            const time = document.createElement('span');
-            time.className = 'message-time';
-            const now = new Date();
-            time.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-            header.appendChild(roleBadge);
-            header.appendChild(time);
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'typing-indicator';
-            typingDiv.innerHTML = '<span></span><span></span><span></span>';
-            
-            contentDiv.appendChild(typingDiv);
-            messageDiv.appendChild(header);
-            messageDiv.appendChild(contentDiv);
-            chatContainer.appendChild(messageDiv);
-            scrollToBottom();
+        function copyMessage(btn) {
+            const content = btn.closest('.message').querySelector('.message-content');
+            const text = content.dataset.raw || content.textContent;
+            navigator.clipboard.writeText(text).then(() => showToast('已复制到剪贴板'));
         }
 
-        function removeTypingIndicator() {
-            const typingDiv = document.getElementById('typing-indicator');
-            if (typingDiv) typingDiv.remove();
+        function attachCodeCopyButtons(container) {
+            container.querySelectorAll('pre').forEach(pre => {
+                const btn = document.createElement('button');
+                btn.className = 'code-copy-btn';
+                btn.textContent = '复制';
+                btn.onclick = () => {
+                    const code = pre.querySelector('code')?.textContent || pre.textContent;
+                    navigator.clipboard.writeText(code).then(() => showToast('代码已复制'));
+                };
+                pre.appendChild(btn);
+            });
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
         }
 
         function markdownToHtml(text) {
             let html = text;
-            
             html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
             html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-            
             html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
             html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
             html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-            
             html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-            
             html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-            
             html = html.replace(/^(-|\*|\+)\s+(.+)$/gm, '<li>$2</li>');
-            html = html.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
-            
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
             html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
-            html = html.replace(/(<li>\d+\..+<\/li>)/g, '<ol>$1</ol>');
-            
-            html = html.replace(/^\s*---\s*$/gm, '<hr>');
-            
             html = html.replace(/^>\s*(.+)$/gm, '<blockquote>$1</blockquote>');
-            
-            html = html.replace(/(\|.*\|)/g, function(match) {
-                let parts = match.split('|').filter(p => p.trim());
-                if (parts.length > 1) {
-                    let isHeader = match.includes(':---') || match.includes('---');
-                    if (isHeader) {
-                        return '<tr>' + parts.map(p => '<th>' + p.trim() + '</th>').join('') + '</tr>';
-                    } else {
-                        return '<tr>' + parts.map(p => '<td>' + p.trim() + '</td>').join('') + '</tr>';
-                    }
-                }
-                return match;
-            });
-            html = html.replace(/(<tr>[\s\S]*?<\/tr>)/g, '<table>$1</table>');
-            
             html = html.replace(/\n/g, '<br>');
-            
             return html;
+        }
+
+        // --- Send / Stop / Regenerate ---
+        function addTypingIndicator() {
+            const emptyState = chatContainer.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.id = 'typing-indicator';
+            div.innerHTML = `
+                <div class="message-header">
+                    <span class="message-role assistant">Jarvis</span>
+                    <span class="message-time">思考中...</span>
+                </div>
+                <div class="message-content"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
+            chatContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        function removeTypingIndicator() {
+            document.getElementById('typing-indicator')?.remove();
         }
 
         async function sendMessage() {
@@ -1098,118 +1585,293 @@
             isProcessing = true;
             sendBtn.disabled = true;
             messageInput.disabled = true;
-            
+            stopBtn.classList.add('visible');
+            abortController = new AbortController();
+
             messages.push({ role: 'user', content: message });
+            messageMeta.push(null);
             addMessage('user', message);
-            
             addTypingIndicator();
 
+            const endpoint = currentMode === 'agent' ? '/agent' : '/chat';
+            const payload = { messages, max_tokens: getMaxTokens(), ...getLLMOptions() };
+
             try {
-                const response = await fetch(`${API_BASE}/agent`, {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messages: messages,
-                        max_tokens: 2048
-                    })
+                    body: JSON.stringify(payload),
+                    signal: abortController.signal
                 });
 
                 removeTypingIndicator();
-
-                if (!response.ok) throw new Error('请求失败');
-
                 const data = await response.json();
-                
-                if (data.tool_used) {
-                    toolCallCount++;
+                if (!response.ok) throw new Error(data.error || `请求失败 (${response.status})`);
+
+                const content = data.content || data.choices?.[0]?.message?.content || '（无回复内容）';
+                if (data.model) {
+                    currentModel = data.model;
+                    updateModelBadge();
                 }
 
-                messages.push({ role: 'assistant', content: data.content });
-                
-                addMessage('assistant', data.content, {
+                if (data.tool_used) toolCallCount++;
+                if (data.context_tokens) lastContextTokens = data.context_tokens;
+
+                const meta = {
                     thinking: data.thinking,
                     toolInfo: data.tool_info,
                     memory: data.memory_context,
                     stats: {
                         tokens_per_second: data.tokens_per_second,
-                        completion_tokens: data.completion_tokens,
-                        response_time: data.response_time
+                        completion_tokens: data.completion_tokens || data.usage?.completion_tokens,
+                        response_time: data.response_time,
+                        context_tokens: data.context_tokens,
+                        provider: data.provider,
+                        model: data.model,
                     }
-                });
+                };
+
+                messages.push({ role: 'assistant', content });
+                messageMeta.push(meta);
+                addMessage('assistant', content, meta);
+                saveChatState();
 
             } catch (error) {
                 removeTypingIndicator();
-                addMessage('assistant', `错误: ${error.message}`);
+                if (error.name === 'AbortError') {
+                    messages.pop();
+                    messageMeta.pop();
+                    showToast('已停止生成');
+                } else {
+                    addMessage('assistant', `错误：${error.message}`);
+                }
             } finally {
                 isProcessing = false;
                 sendBtn.disabled = false;
                 messageInput.disabled = false;
+                stopBtn.classList.remove('visible');
+                abortController = null;
                 messageInput.value = '';
+                onInputChange();
                 messageInput.focus();
             }
         }
 
-        function handleKeyDown(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
+        function stopGeneration() {
+            abortController?.abort();
+        }
+
+        async function regenerate() {
+            if (isProcessing || messages.length < 2) return;
+            if (messages[messages.length - 1].role === 'assistant') {
+                messages.pop();
+                messageMeta.pop();
+            }
+            if (messages[messages.length - 1]?.role === 'user') {
+                const lastUser = messages.pop();
+                messageMeta.pop();
+                chatContainer.innerHTML = '';
+                messages.forEach((msg, i) => {
+                    if (msg.role === 'user') addMessageDOM('user', msg.content);
+                    else addMessageDOM('assistant', msg.content, messageMeta[i] || {});
+                });
+                messageInput.value = lastUser.content;
+                onInputChange();
+                await sendMessage();
+            }
+        }
+
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
                 sendMessage();
             }
         }
 
+        function onInputChange() {
+            const len = messageInput.value.length;
+            document.getElementById('char-count').textContent = `${len} 字`;
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+        }
+
+        // --- Session ---
         function clearChat() {
-            chatContainer.innerHTML = `
-                <div class="empty-state">
-                    <h3>欢迎使用 Jarvis Agent</h3>
-                    <p>我是您的智能助手，可以帮助您完成各种任务。试试让我计算、搜索或查询天气吧！</p>
-                </div>
-            `;
+            if (messages.length && !confirm('确定清空当前对话？')) return;
             messages = [];
+            messageMeta = [];
             toolCallCount = 0;
+            lastContextTokens = 0;
+            localStorage.removeItem(STORAGE_KEY);
+            renderEmptyState();
             updateStats();
         }
 
         async function newSession() {
             try {
                 await fetch(`${API_BASE}/session`, { method: 'POST' });
-                clearChat();
-            } catch (error) {
-                console.error('创建会话失败:', error);
-            }
+            } catch (e) {}
+            clearChat();
+            showToast('新会话已创建');
+        }
+
+        function exportChat() {
+            if (!messages.length) { showToast('暂无对话可导出'); return; }
+            let md = `# Jarvis 对话记录\n\n导出时间：${new Date().toLocaleString()}\n模式：${currentMode === 'agent' ? 'Agent' : '普通聊天'}\n\n---\n\n`;
+            messages.forEach(msg => {
+                const label = msg.role === 'user' ? '**用户**' : '**Jarvis**';
+                md += `${label}\n\n${msg.content}\n\n---\n\n`;
+            });
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `jarvis-chat-${Date.now()}.md`;
+            a.click();
+            showToast('对话已导出');
         }
 
         function updateStats() {
             document.getElementById('stat-messages').textContent = messages.length;
             document.getElementById('stat-tools').textContent = toolCallCount;
+            document.getElementById('stat-context').textContent = `${lastContextTokens} tokens`;
             loadMemoryStats();
         }
 
         async function loadMemoryStats() {
             try {
-                const response = await fetch(`${API_BASE}/memory/stats`);
-                const data = await response.json();
+                const res = await fetch(`${API_BASE}/memory/stats`);
+                const data = await res.json();
                 document.getElementById('stat-short-memory').textContent = data.short_term_summaries || 0;
                 document.getElementById('stat-long-memory').textContent = data.long_term_memories || 0;
-            } catch (error) {
-                console.error('加载记忆统计失败:', error);
+            } catch (e) {}
+        }
+
+        // --- Memory Panel ---
+        function openMemoryPanel() {
+            document.getElementById('memory-modal').classList.add('open');
+            switchMemoryTab(currentMemoryTab);
+        }
+
+        function switchMemoryTab(tab) {
+            currentMemoryTab = tab;
+            document.querySelectorAll('.memory-tab').forEach((el, i) => {
+                el.classList.toggle('active', ['long','short','add'][i] === tab);
+            });
+            const container = document.getElementById('memory-content');
+            if (tab === 'add') {
+                container.innerHTML = `
+                    <div class="form-group">
+                        <label>记忆内容</label>
+                        <textarea class="form-textarea" id="new-memory-content" placeholder="输入要记住的信息..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>分类</label>
+                        <input class="form-input" id="new-memory-category" value="general" placeholder="general / knowledge / preference">
+                    </div>
+                    <button class="modal-btn primary" onclick="addMemory()">添加记忆</button>`;
+            } else {
+                loadMemories(tab);
             }
         }
 
-        async function loadModelInfo() {
+        async function loadMemories(type) {
+            const container = document.getElementById('memory-content');
+            container.innerHTML = '<div class="empty-memory">加载中...</div>';
             try {
-                const response = await fetch(`${API_BASE}/models`);
-                const data = await response.json();
-                if (data.models && data.models.length > 0) {
-                    modelBadge.textContent = data.models[0].name;
-                } else {
-                    modelBadge.textContent = '未加载模型';
+                const res = await fetch(`${API_BASE}/memory`);
+                const data = await res.json();
+                const items = type === 'long' ? (data.long_term || []) : (data.short_term || []);
+                if (!items.length) {
+                    container.innerHTML = '<div class="empty-memory">暂无记忆</div>';
+                    return;
                 }
-            } catch (error) {
-                modelBadge.textContent = '连接模型失败';
+                container.innerHTML = `<div class="memory-list">${items.map(item => {
+                    const text = type === 'long' ? item.content : item.summary;
+                    const id = item.id;
+                    const cat = item.category || 'summary';
+                    return `<div class="memory-card">
+                        <div class="memory-card-header">
+                            <span class="memory-category">${cat}</span>
+                            ${type === 'long' ? `<button class="memory-delete" onclick="deleteMemory('${id}')">&times;</button>` : ''}
+                        </div>
+                        <div class="memory-text">${escapeHtml(text)}</div>
+                    </div>`;
+                }).join('')}</div>`;
+            } catch (e) {
+                container.innerHTML = '<div class="empty-memory">加载失败</div>';
             }
         }
 
-        loadModelInfo();
-        loadMemoryStats();
+        async function addMemory() {
+            const content = document.getElementById('new-memory-content').value.trim();
+            const category = document.getElementById('new-memory-category').value.trim() || 'general';
+            if (!content) { showToast('请输入记忆内容'); return; }
+            try {
+                await fetch(`${API_BASE}/memory`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, category })
+                });
+                showToast('记忆已添加');
+                switchMemoryTab('long');
+                loadMemoryStats();
+            } catch (e) {
+                showToast('添加失败');
+            }
+        }
+
+        async function deleteMemory(id) {
+            try {
+                await fetch(`${API_BASE}/memory/${id}`, { method: 'DELETE' });
+                showToast('已删除');
+                loadMemories('long');
+                loadMemoryStats();
+            } catch (e) {
+                showToast('删除失败');
+            }
+        }
+
+        async function clearAllMemories() {
+            if (!confirm('确定清空全部记忆？此操作不可恢复。')) return;
+            try {
+                await fetch(`${API_BASE}/memory`, { method: 'DELETE' });
+                showToast('记忆已清空');
+                switchMemoryTab(currentMemoryTab);
+                loadMemoryStats();
+            } catch (e) {
+                showToast('清空失败');
+            }
+        }
+
+        // --- Modals & Toast ---
+        async function openSettings() {
+            document.getElementById('settings-modal').classList.add('open');
+            if (!providers.length) await loadProviders();
+            renderProviderSelect();
+            document.getElementById('model-select').value = currentModel;
+            updateApiKeyUI();
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
+
+        function showToast(msg) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', e => {
+                if (e.target === overlay) overlay.classList.remove('open');
+            });
+        });
+
+        init();
     </script>
 </body>
 </html>

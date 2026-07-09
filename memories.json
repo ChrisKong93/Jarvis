@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "fddc99b0c731a913",
+    "content": "助手名为Jarvis，具备数学计算、日期时间、文件操作、网络搜索、天气查询能力，并能进行任务规划和反思调整。",
+    "category": "knowledge",
+    "metadata": {},
+    "created_at": 1783499797.066827,
+    "last_accessed_at": 1783499797.066829,
+    "access_count": 1
+  }
+]
