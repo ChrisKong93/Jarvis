@@ -160,6 +160,7 @@ class Agent:
 
         total_completion_tokens = 0
         total_prompt_tokens = 0
+        total_llm_time = 0
         used_model = model
 
         current_messages = full_messages.copy()
@@ -178,6 +179,7 @@ class Agent:
             response_text = llm_response["content"]
             total_completion_tokens += llm_response["completion_tokens"]
             total_prompt_tokens += llm_response["prompt_tokens"]
+            total_llm_time += llm_response.get("response_time", 0)
             used_model = llm_response.get("model") or used_model
 
             tool_call = self._parse_tool_call(llm_response)
@@ -309,6 +311,7 @@ class Agent:
             final_response = llm_response["content"]
             total_completion_tokens += llm_response["completion_tokens"]
             total_prompt_tokens += llm_response["prompt_tokens"]
+            total_llm_time += llm_response.get("response_time", 0)
             used_model = llm_response.get("model") or used_model
 
         self._update_memories(
@@ -321,7 +324,7 @@ class Agent:
         )
 
         elapsed_time = time.time() - start_time
-        tokens_per_second = round(total_completion_tokens / elapsed_time, 2) if elapsed_time > 0 else 0
+        tokens_per_second = round(total_completion_tokens / total_llm_time, 2) if total_llm_time > 0 else 0
 
         return {
             "content": final_response,

@@ -178,3 +178,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# Project specific
+/data/
+memories.json
+frontend/node_modules/
+*.db

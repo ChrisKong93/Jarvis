@@ -16,14 +16,16 @@ class SessionManager:
         self.max_sessions = max_sessions
         self.session_timeout = session_timeout
 
-    def create_session(self) -> str:
+    def create_session(self, session_id: Optional[str] = None) -> str:
         self._cleanup_expired_sessions()
         
         if len(self.sessions) >= self.max_sessions:
             oldest_session = min(self.sessions.values(), key=lambda s: s.last_active)
             del self.sessions[oldest_session.session_id]
         
-        session_id = str(uuid.uuid4())
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        
         self.sessions[session_id] = Session(
             session_id=session_id,
             messages=[],
@@ -64,5 +66,26 @@ class SessionManager:
     def get_sessions_count(self) -> int:
         self._cleanup_expired_sessions()
         return len(self.sessions)
+
+    def list_sessions(self) -> List[Dict]:
+        self._cleanup_expired_sessions()
+        sessions_list = []
+        for session in self.sessions.values():
+            preview = ""
+            if session.messages:
+                last_message = session.messages[-1]
+                preview = last_message.get("content", "")[:50]
+                if len(last_message.get("content", "")) > 50:
+                    preview += "..."
+            
+            sessions_list.append({
+                "session_id": session.session_id,
+                "created_at": session.created_at.isoformat(),
+                "last_active": session.last_active.isoformat(),
+                "message_count": len(session.messages),
+                "preview": preview or "新会话"
+            })
+        
+        return sorted(sessions_list, key=lambda s: s["last_active"], reverse=True)
 
 session_manager = SessionManager()

@@ -134,9 +134,6 @@ class LLMClient:
         if not provider.get("dynamic_models") and provider.get("models"):
             return [{"id": m, "name": m} for m in provider["models"]]
 
-        if not is_api_key_configured(provider_id, api_key) and provider.get("api_key_env"):
-            return [{"id": m, "name": m} for m in provider.get("models", [])]
-
         resolved_base = resolve_base_url(provider_id, base_url)
         resolved_key = resolve_api_key(provider_id, api_key)
         headers = {}

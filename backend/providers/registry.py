@@ -1,103 +1,134 @@
 import os
 from typing import Any, Dict, List, Optional
+import yaml
 
 
-def _env(key: str, default: str = "") -> str:
-    return os.environ.get(key, default).strip()
+def _load_providers_config() -> Dict[str, Dict[str, Any]]:
+    config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config")
+    config_path = os.path.join(config_dir, "providers.yaml")
+    
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    
+    return {}
+
+
+PROVIDER_CONFIG = _load_providers_config()
+
+
+def _get_provider_config(provider_id: str, key: str, default: Any = None) -> Any:
+    return PROVIDER_CONFIG.get(provider_id, {}).get(key, default)
 
 
 PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "llama_cpp": {
         "id": "llama_cpp",
-        "name": "本地 llama.cpp",
-        "description": "本地部署的 GGUF 模型服务",
+        "name": _get_provider_config("llama_cpp", "name", "本地 llama.cpp"),
+        "description": _get_provider_config("llama_cpp", "description", "本地部署的 GGUF 模型服务"),
         "type": "openai_compatible",
-        "base_url": _env("LLAMA_CPP_URL", "http://192.168.0.201:8081"),
+        "base_url": _get_provider_config("llama_cpp", "base_url", "http://192.168.0.201:8081"),
+        "api_key": _get_provider_config("llama_cpp", "api_key", ""),
+        "requires_api_key": _get_provider_config("llama_cpp", "requires_api_key", False),
         "api_key_env": None,
-        "models": [],
-        "default_model": None,
-        "dynamic_models": True,
+        "models": _get_provider_config("llama_cpp", "models", []),
+        "default_model": _get_provider_config("llama_cpp", "default_model"),
+        "dynamic_models": _get_provider_config("llama_cpp", "dynamic_models", True),
     },
     "deepseek": {
         "id": "deepseek",
-        "name": "DeepSeek",
-        "description": "DeepSeek 云端大模型",
+        "name": _get_provider_config("deepseek", "name", "DeepSeek"),
+        "description": _get_provider_config("deepseek", "description", "DeepSeek 云端大模型"),
         "type": "openai_compatible",
-        "base_url": "https://api.deepseek.com",
-        "api_key_env": "DEEPSEEK_API_KEY",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
-        "default_model": "deepseek-chat",
-        "dynamic_models": False,
+        "base_url": _get_provider_config("deepseek", "base_url", "https://api.deepseek.com"),
+        "api_key": _get_provider_config("deepseek", "api_key", ""),
+        "requires_api_key": _get_provider_config("deepseek", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("deepseek", "models", ["deepseek-chat", "deepseek-reasoner"]),
+        "default_model": _get_provider_config("deepseek", "default_model", "deepseek-chat"),
+        "dynamic_models": _get_provider_config("deepseek", "dynamic_models", True),
     },
     "openai": {
         "id": "openai",
-        "name": "OpenAI",
-        "description": "OpenAI GPT 系列",
+        "name": _get_provider_config("openai", "name", "OpenAI"),
+        "description": _get_provider_config("openai", "description", "OpenAI GPT 系列"),
         "type": "openai_compatible",
-        "base_url": "https://api.openai.com",
-        "api_key_env": "OPENAI_API_KEY",
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-mini"],
-        "default_model": "gpt-4o-mini",
-        "dynamic_models": True,
+        "base_url": _get_provider_config("openai", "base_url", "https://api.openai.com"),
+        "api_key": _get_provider_config("openai", "api_key", ""),
+        "requires_api_key": _get_provider_config("openai", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("openai", "models", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-mini"]),
+        "default_model": _get_provider_config("openai", "default_model", "gpt-4o-mini"),
+        "dynamic_models": _get_provider_config("openai", "dynamic_models", True),
     },
     "moonshot": {
         "id": "moonshot",
-        "name": "Moonshot (Kimi)",
-        "description": "月之暗面 Kimi 大模型",
+        "name": _get_provider_config("moonshot", "name", "Moonshot (Kimi)"),
+        "description": _get_provider_config("moonshot", "description", "月之暗面 Kimi 大模型"),
         "type": "openai_compatible",
-        "base_url": "https://api.moonshot.cn",
-        "api_key_env": "MOONSHOT_API_KEY",
-        "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
-        "default_model": "moonshot-v1-8k",
-        "dynamic_models": False,
+        "base_url": _get_provider_config("moonshot", "base_url", "https://api.moonshot.cn"),
+        "api_key": _get_provider_config("moonshot", "api_key", ""),
+        "requires_api_key": _get_provider_config("moonshot", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("moonshot", "models", ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]),
+        "default_model": _get_provider_config("moonshot", "default_model", "moonshot-v1-8k"),
+        "dynamic_models": _get_provider_config("moonshot", "dynamic_models", True),
     },
     "zhipu": {
         "id": "zhipu",
-        "name": "智谱 GLM",
-        "description": "智谱 AI GLM 系列",
+        "name": _get_provider_config("zhipu", "name", "智谱 GLM"),
+        "description": _get_provider_config("zhipu", "description", "智谱 AI GLM 系列"),
         "type": "openai_compatible",
-        "base_url": "https://open.bigmodel.cn/api/paas",
-        "api_key_env": "ZHIPU_API_KEY",
-        "models": ["glm-4-flash", "glm-4", "glm-4-plus"],
-        "default_model": "glm-4-flash",
-        "dynamic_models": False,
+        "base_url": _get_provider_config("zhipu", "base_url", "https://open.bigmodel.cn/api/paas"),
+        "api_key": _get_provider_config("zhipu", "api_key", ""),
+        "requires_api_key": _get_provider_config("zhipu", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("zhipu", "models", ["glm-4-flash", "glm-4", "glm-4-plus"]),
+        "default_model": _get_provider_config("zhipu", "default_model", "glm-4-flash"),
+        "dynamic_models": _get_provider_config("zhipu", "dynamic_models", True),
     },
     "dashscope": {
         "id": "dashscope",
-        "name": "通义千问",
-        "description": "阿里云通义千问",
+        "name": _get_provider_config("dashscope", "name", "通义千问"),
+        "description": _get_provider_config("dashscope", "description", "阿里云通义千问"),
         "type": "openai_compatible",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode",
-        "api_key_env": "DASHSCOPE_API_KEY",
-        "models": ["qwen-turbo", "qwen-plus", "qwen-max"],
-        "default_model": "qwen-turbo",
-        "dynamic_models": False,
+        "base_url": _get_provider_config("dashscope", "base_url", "https://dashscope.aliyuncs.com/compatible-mode"),
+        "api_key": _get_provider_config("dashscope", "api_key", ""),
+        "requires_api_key": _get_provider_config("dashscope", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("dashscope", "models", ["qwen-turbo", "qwen-plus", "qwen-max"]),
+        "default_model": _get_provider_config("dashscope", "default_model", "qwen-turbo"),
+        "dynamic_models": _get_provider_config("dashscope", "dynamic_models", True),
     },
     "siliconflow": {
         "id": "siliconflow",
-        "name": "SiliconFlow",
-        "description": "硅基流动模型聚合平台",
+        "name": _get_provider_config("siliconflow", "name", "SiliconFlow"),
+        "description": _get_provider_config("siliconflow", "description", "硅基流动模型聚合平台"),
         "type": "openai_compatible",
-        "base_url": "https://api.siliconflow.cn",
-        "api_key_env": "SILICONFLOW_API_KEY",
-        "models": [
+        "base_url": _get_provider_config("siliconflow", "base_url", "https://api.siliconflow.cn"),
+        "api_key": _get_provider_config("siliconflow", "api_key", ""),
+        "requires_api_key": _get_provider_config("siliconflow", "requires_api_key", True),
+        "api_key_env": None,
+        "models": _get_provider_config("siliconflow", "models", [
             "deepseek-ai/DeepSeek-V3",
             "Qwen/Qwen2.5-72B-Instruct",
             "meta-llama/Meta-Llama-3.1-8B-Instruct",
-        ],
-        "default_model": "deepseek-ai/DeepSeek-V3",
-        "dynamic_models": True,
+        ]),
+        "default_model": _get_provider_config("siliconflow", "default_model", "deepseek-ai/DeepSeek-V3"),
+        "dynamic_models": _get_provider_config("siliconflow", "dynamic_models", True),
     },
     "custom": {
         "id": "custom",
-        "name": "自定义 OpenAI 兼容",
-        "description": "任意 OpenAI 兼容 API 端点",
+        "name": _get_provider_config("custom", "name", "自定义 OpenAI 兼容"),
+        "description": _get_provider_config("custom", "description", "任意 OpenAI 兼容 API 端点"),
         "type": "openai_compatible",
-        "base_url": _env("CUSTOM_LLM_BASE_URL", ""),
-        "api_key_env": "CUSTOM_LLM_API_KEY",
-        "models": [],
-        "default_model": _env("CUSTOM_LLM_MODEL", ""),
-        "dynamic_models": True,
+        "base_url": _get_provider_config("custom", "base_url", ""),
+        "api_key": _get_provider_config("custom", "api_key", ""),
+        "requires_api_key": _get_provider_config("custom", "requires_api_key", False),
+        "api_key_env": None,
+        "models": _get_provider_config("custom", "models", []),
+        "default_model": _get_provider_config("custom", "default_model", ""),
+        "dynamic_models": _get_provider_config("custom", "dynamic_models", True),
     },
 }
 
@@ -119,7 +150,9 @@ def list_providers(include_status: bool = True) -> List[Dict[str, Any]]:
         }
         if include_status:
             item["api_key_configured"] = is_api_key_configured(provider["id"])
-            item["base_url"] = provider["base_url"] if provider["id"] == "custom" else None
+            item["base_url"] = provider["base_url"]
+            item["api_key"] = provider.get("api_key", "")
+            item["requires_api_key"] = provider.get("requires_api_key", False)
         result.append(item)
     return result
 
@@ -130,9 +163,9 @@ def is_api_key_configured(provider_id: str, override_key: Optional[str] = None) 
     provider = get_provider(provider_id)
     if not provider:
         return False
-    if not provider.get("api_key_env"):
-        return True
-    return bool(_env(provider["api_key_env"]))
+    if provider.get("requires_api_key", False):
+        return bool(provider.get("api_key"))
+    return True
 
 
 def resolve_api_key(provider_id: str, override_key: Optional[str] = None) -> Optional[str]:
@@ -141,10 +174,7 @@ def resolve_api_key(provider_id: str, override_key: Optional[str] = None) -> Opt
     provider = get_provider(provider_id)
     if not provider:
         return None
-    env_name = provider.get("api_key_env")
-    if not env_name:
-        return None
-    return _env(env_name) or None
+    return provider.get("api_key") or None
 
 
 def resolve_base_url(provider_id: str, override_url: Optional[str] = None) -> str:
@@ -163,3 +193,6 @@ def resolve_model(provider_id: str, model: Optional[str] = None) -> Optional[str
     if model:
         return model
     return provider.get("default_model")
+
+
+
