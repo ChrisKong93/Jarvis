@@ -4,12 +4,15 @@ import ChatPanel from '@/components/ChatPanel.vue'
 import SidebarLeft from '@/components/SidebarLeft.vue'
 import SidebarRight from '@/components/SidebarRight.vue'
 import LoginPage from '@/components/LoginPage.vue'
+import PluginPage from '@/components/PluginPage.vue'
+import SettingsPage from '@/components/SettingsPage.vue'
 import axios from 'axios'
 
-const activeRightPanel = ref('tools')
+const activePage = ref('chat')
 const currentMode = ref('agent')
 const isOnline = ref(true)
 const sessionId = ref('')
+const sessionReloadKey = ref(0)
 const isDarkMode = ref(true)
 const isLoggedIn = ref(false)
 const currentUser = ref(null)
@@ -144,24 +147,35 @@ const toggleTheme = () => {
   localStorage.setItem('jarvis-theme', isDarkMode.value ? 'dark' : 'light')
 }
 
-const handleRightPanelChange = (panel) => {
-  activeRightPanel.value = panel
+const handleOpenSettings = () => {
+  activePage.value = 'settings'
 }
 
 const handleModeChange = (mode) => {
   currentMode.value = mode
 }
 
-const handleOpenSettings = () => {
-  activeRightPanel.value = 'settings'
-}
-
 const handleNewSession = (newSessionId) => {
   sessionId.value = newSessionId
+  sessionReloadKey.value++
 }
 
 const handleSwitchSession = async (newSessionId) => {
   sessionId.value = newSessionId
+  sessionReloadKey.value++
+}
+
+const handleDeleteSession = async (deletedSessionId) => {
+  if (deletedSessionId === sessionId.value) {
+    try {
+      const response = await axios.post('/api/session')
+      sessionId.value = response.data.session_id
+      localStorage.setItem('jarvis-session-id', sessionId.value)
+      sessionReloadKey.value++
+    } catch (e) {
+      console.error('创建新会话失败:', e)
+    }
+  }
 }
 
 const handleUpdateStats = (stats) => {
@@ -172,6 +186,7 @@ const handleUpdateStats = (stats) => {
     inputTokens: stats.prompt_tokens || 0,
     totalTokens: stats.total_tokens || 0
   }
+  sessionReloadKey.value++
 }
 
 const handleSettingsChange = async (settings) => {
@@ -235,6 +250,7 @@ const initSession = async () => {
       const response = await axios.post('/api/session')
       sessionId.value = response.data.session_id
       localStorage.setItem('jarvis-session-id', sessionId.value)
+      sessionReloadKey.value++
     } catch (e) {
       console.error('初始化会话失败:', e)
     }
@@ -265,7 +281,15 @@ watch(sessionId, (newSessionId) => {
   </div>
   
   <div v-else class="app-container">
-    <SidebarLeft :stats="chatStats" :current-session-id="sessionId" @new-session="handleNewSession" @switch-session="handleSwitchSession" />
+    <SidebarLeft
+      :current-session-id="sessionId"
+      :session-reload-key="sessionReloadKey"
+      :active-page="activePage"
+      @new-session="handleNewSession"
+      @switch-session="handleSwitchSession"
+      @delete-session="handleDeleteSession"
+      @active-page-change="activePage = $event"
+    />
     
     <main class="main-content">
       <header class="header">
@@ -274,7 +298,7 @@ watch(sessionId, (newSessionId) => {
             <span class="status-dot"></span>
             <span>{{ isOnline ? 'Online' : 'Offline' }}</span>
           </div>
-          <div class="provider-switcher">
+          <div v-if="activePage === 'chat'" class="provider-switcher">
             <div class="switcher-label">模型</div>
             <select class="switcher-select" @change="handleQuickSwitch($event.target.value)">
                <option v-for="cp in configuredProviders" :key="cp.provider_id" :value="cp.provider_id" :selected="cp.provider_id === currentSettings.provider">
@@ -297,7 +321,7 @@ watch(sessionId, (newSessionId) => {
               退出
             </button>
           </div>
-          <div class="mode-toggle">
+          <div v-if="activePage === 'chat'" class="mode-toggle">
             <button 
               :class="['mode-btn', { active: currentMode === 'agent' }]"
               @click="handleModeChange('agent')"
@@ -317,10 +341,12 @@ watch(sessionId, (newSessionId) => {
         </div>
       </header>
       
-      <ChatPanel :mode="currentMode" :settings="currentSettings" :session-id="sessionId" @open-settings="handleOpenSettings" @update-stats="handleUpdateStats" />
+      <ChatPanel v-if="activePage === 'chat'" :mode="currentMode" :settings="currentSettings" :session-id="sessionId" @open-settings="handleOpenSettings" @update-stats="handleUpdateStats" />
+      <PluginPage v-else-if="activePage === 'plugins'" class="page-content" />
+      <SettingsPage v-else-if="activePage === 'settings'" :settings="currentSettings" @settings-change="handleSettingsChange" />
     </main>
     
-    <SidebarRight :active-panel="activeRightPanel" :settings="currentSettings" @panel-change="handleRightPanelChange" @settings-change="handleSettingsChange" />
+    <SidebarRight v-if="activePage === 'chat'" :stats="chatStats" />
   </div>
 </template>
 
@@ -372,10 +398,25 @@ watch(sessionId, (newSessionId) => {
 }
 
 .header-center h1 {
-  font-size: 18px;
+  font-size: 16px;
+  margin: 0;
   font-weight: 600;
   color: var(--text-white);
   transition: color 0.3s ease;
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+[data-theme="light"] .header-center h1 {
+  color: var(--text-primary);
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .user-info {

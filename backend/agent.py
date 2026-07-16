@@ -138,12 +138,13 @@ class Agent:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
 
         truncated_messages = truncate_messages(messages, max_tokens)
         last_user_message = messages[-1]["content"] if messages else ""
-        memory_context = memory_manager.get_context(last_user_message)
+        memory_context = memory_manager.get_context(user_id, last_user_message)
 
         system_prompt = self._build_system_prompt()
         if memory_context["used"]:
@@ -321,6 +322,7 @@ class Agent:
             model=model,
             api_key=api_key,
             base_url=base_url,
+            user_id=user_id,
         )
 
         elapsed_time = time.time() - start_time
@@ -354,6 +356,7 @@ class Agent:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> None:
         if len(messages) % self.summary_frequency == 0:
             summary = self._generate_summary(
@@ -364,7 +367,7 @@ class Agent:
                 base_url=base_url,
             )
             if summary:
-                memory_manager.add_short_term_summary(messages, summary)
+                memory_manager.add_short_term_summary(user_id, messages, summary)
 
         important_info = self._extract_important_info(
             messages[-1]["content"],
@@ -375,7 +378,7 @@ class Agent:
             base_url=base_url,
         )
         if important_info:
-            memory_manager.add_long_term_memory(important_info, category="knowledge")
+            memory_manager.add_long_term_memory(user_id, important_info, category="knowledge")
 
     def _generate_summary(
         self,

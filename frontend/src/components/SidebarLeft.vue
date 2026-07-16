@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -16,12 +16,21 @@ const props = defineProps({
   currentSessionId: {
     type: String,
     default: ''
+  },
+  sessionReloadKey: {
+    type: Number,
+    default: 0
+  },
+  activePage: {
+    type: String,
+    default: 'chat'
   }
 })
 
-const emit = defineEmits(['new-session', 'clear-messages', 'switch-session', 'delete-session'])
+const emit = defineEmits(['new-session', 'clear-messages', 'switch-session', 'delete-session', 'active-page-change'])
 
 const sessions = ref([])
+const activeNav = ref(props.activePage)
 
 const loadSessions = async () => {
   try {
@@ -33,6 +42,23 @@ const loadSessions = async () => {
 }
 
 onMounted(loadSessions)
+
+watch(() => props.currentSessionId, () => {
+  loadSessions()
+})
+
+watch(() => props.sessionReloadKey, () => {
+  loadSessions()
+})
+
+watch(() => props.activePage, (val) => {
+  activeNav.value = val
+})
+
+const switchNav = (page) => {
+  activeNav.value = page
+  emit('active-page-change', page)
+}
 
 const handleNewSession = async () => {
   try {
@@ -90,6 +116,7 @@ const handleDeleteSession = (sessionId) => {
   if (confirm('确定要删除这个会话吗？')) {
     axios.delete(`/api/session/${sessionId}`).then(() => {
       loadSessions()
+      emit('delete-session', sessionId)
     }).catch(e => {
       console.error('删除会话失败:', e)
     })
@@ -118,83 +145,77 @@ const formatTime = (isoString) => {
       </div>
     </div>
     
-    <div class="section-title">会话列表</div>
-    <div class="sessions-panel">
-      <div 
-        v-for="session in sessions" 
-        :key="session.session_id"
-        :class="['session-item', { active: session.session_id === currentSessionId }]"
-      >
-        <div class="session-info" @click="handleSwitchSession(session.session_id)">
-          <div class="session-preview">{{ session.preview }}</div>
-          <div class="session-meta">
-            <span class="session-time">{{ formatTime(session.last_active) }}</span>
-            <span class="session-count">{{ session.message_count }}条消息</span>
-          </div>
-        </div>
-        <button 
-          class="session-delete" 
-          @click.stop="handleDeleteSession(session.session_id)"
-          title="删除会话"
+    <nav class="nav-list">
+      <button :class="['nav-item', { active: activeNav === 'chat' }]" @click="switchNav('chat')">
+        <span class="nav-icon">💬</span>
+        <span class="nav-label">对话</span>
+      </button>
+      <button :class="['nav-item', { active: activeNav === 'plugins' }]" @click="switchNav('plugins')">
+        <span class="nav-icon">🧩</span>
+        <span class="nav-label">插件</span>
+      </button>
+      <button :class="['nav-item', { active: activeNav === 'settings' }]" @click="switchNav('settings')">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-label">设置</span>
+      </button>
+    </nav>
+    
+    <template v-if="activeNav === 'chat'">
+      <div class="section-title">会话列表</div>
+      <div class="sessions-panel">
+        <div 
+          v-for="session in sessions" 
+          :key="session.session_id"
+          :class="['session-item', { active: session.session_id === currentSessionId }]"
         >
-          ×
-        </button>
+          <div class="session-info" @click="handleSwitchSession(session.session_id)">
+            <div class="session-preview">{{ session.preview }}</div>
+            <div class="session-meta">
+              <span class="session-time">{{ formatTime(session.last_active) }}</span>
+              <span class="session-count">{{ session.message_count }}条消息</span>
+            </div>
+          </div>
+          <button 
+            class="session-delete" 
+            @click.stop="handleDeleteSession(session.session_id)"
+            title="删除会话"
+          >
+            ×
+          </button>
+        </div>
+        <div v-if="sessions.length === 0" class="empty-message">暂无会话</div>
       </div>
-      <div v-if="sessions.length === 0" class="empty-message">暂无会话</div>
-    </div>
-    
-    <div class="section-title">性能指标</div>
-    <div class="stats-panel">
-      <div class="stat-item">
-        <span class="stat-label">响应时间</span>
-        <span class="stat-value">{{ stats.responseTime.toFixed(1) }}s</span>
+      
+      <div class="sidebar-actions">
+        <button class="sidebar-btn" @click="handleNewSession">🔄 新建会话</button>
+        <button class="sidebar-btn" @click="handleSaveRecord">💾 保存记录</button>
+        <button class="sidebar-btn danger" @click="handleClearMemory">🗑️ 清空记忆</button>
       </div>
-      <div class="stat-item">
-        <span class="stat-label">Tokens/s</span>
-        <span class="stat-value">{{ stats.tokensPerSecond.toFixed(1) }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">输出Tokens</span>
-        <span class="stat-value">{{ stats.outputTokens }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">输入Tokens</span>
-        <span class="stat-value">{{ stats.inputTokens }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">总Tokens</span>
-        <span class="stat-value">{{ stats.totalTokens }}</span>
-      </div>
-    </div>
-    
-    <div class="sidebar-actions">
-      <button class="sidebar-btn" @click="handleNewSession">🔄 新建会话</button>
-      <button class="sidebar-btn" @click="handleSaveRecord">💾 保存记录</button>
-      <button class="sidebar-btn danger" @click="handleClearMemory">🗑️ 清空记忆</button>
-    </div>
+    </template>
   </aside>
 </template>
 
 <style scoped>
 .sidebar {
-  width: 280px;
-  min-width: 280px;
+  width: 260px;
+  min-width: 260px;
   background: var(--gradient-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 20px 16px;
   flex-shrink: 0;
   transition: background 0.3s ease, border-color 0.3s ease;
+  overflow-y: auto;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border-color);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   transition: border-color 0.3s ease;
 }
 
@@ -209,10 +230,49 @@ const formatTime = (isoString) => {
   font-size: 18px;
   font-weight: bold;
   color: white;
+  flex-shrink: 0;
 }
 
-.agent-info h2 { font-size: 16px; font-weight: 600; color: var(--text-white); transition: color 0.3s ease; }
-.agent-info p { font-size: 12px; color: var(--text-secondary); transition: color 0.3s ease; }
+.agent-info h2 { font-size: 16px; font-weight: 600; color: var(--text-white); margin: 0; }
+.agent-info p { font-size: 12px; color: var(--text-secondary); margin: 0; }
+
+/* Navigation */
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.25s;
+  width: 100%;
+  text-align: left;
+}
+
+.nav-item.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.nav-item:not(.active):hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-white);
+}
+
+.nav-icon { font-size: 16px; }
 
 .section-title {
   font-size: 11px;
@@ -220,14 +280,12 @@ const formatTime = (isoString) => {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   transition: color 0.3s ease;
 }
 
 .sessions-panel {
-  flex: 1;
-  overflow-y: auto;
-  max-height: 200px;
+  margin-bottom: 12px;
 }
 
 .session-item {
@@ -300,19 +358,24 @@ const formatTime = (isoString) => {
   text-align: center;
   color: var(--text-muted);
   font-size: 12px;
-  padding: 20px;
+  padding: 12px 0;
   transition: color 0.3s ease;
 }
 
-.stats-panel {
-  margin-top: 15px;
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .stat-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 6px 0;
   font-size: 12px;
 }
 
@@ -321,7 +384,7 @@ const formatTime = (isoString) => {
 
 .sidebar-actions {
   margin-top: auto;
-  padding-top: 15px;
+  padding-top: 12px;
   border-top: 1px solid var(--border-color);
   transition: border-color 0.3s ease;
 }
@@ -336,7 +399,7 @@ const formatTime = (isoString) => {
   color: var(--accent-primary);
   cursor: pointer;
   transition: all 0.2s;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   display: flex;
   align-items: center;
   gap: 8px;

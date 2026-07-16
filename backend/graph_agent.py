@@ -158,7 +158,7 @@ class GraphAgent:
         messages = state["provider_config"].get("original_messages", [])
         last_user_message = messages[-1]["content"] if messages else ""
         truncated_messages = truncate_messages(messages, state["provider_config"]["max_tokens"])
-        memory_context = memory_manager.get_context(last_user_message)
+        memory_context = memory_manager.get_context(state["provider_config"].get("user_id"), last_user_message)
         tools_for_llm = self._get_tools_for_llm()
 
         system_prompt = self._build_system_prompt(memory_context)
@@ -345,7 +345,7 @@ class GraphAgent:
         if len(user_messages) % self.summary_frequency == 0:
             summary = self._generate_summary(messages, state["provider_config"])
             if summary:
-                memory_manager.add_short_term_summary(messages, summary)
+                memory_manager.add_short_term_summary(state["provider_config"].get("user_id"), messages, summary)
 
         important_info = self._extract_important_info(
             state["last_user_message"],
@@ -353,7 +353,7 @@ class GraphAgent:
             state["provider_config"],
         )
         if important_info:
-            memory_manager.add_long_term_memory(important_info, category="knowledge")
+            memory_manager.add_long_term_memory(state["provider_config"].get("user_id"), important_info, category="knowledge")
 
         return state
 
@@ -426,6 +426,7 @@ class GraphAgent:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
 
@@ -436,6 +437,7 @@ class GraphAgent:
             "base_url": base_url,
             "max_tokens": max_tokens,
             "original_messages": messages,
+            "user_id": user_id,
         }
 
         initial_state: AgentState = {

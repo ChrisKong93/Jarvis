@@ -20,6 +20,7 @@ from backend.auth import (
 from backend.database import ModelConfig, init_db, get_db
 from backend.graph_agent import GraphAgent
 from backend.memory import memory_manager
+from backend.plugin_manager import seed_default_plugins, get_all_plugins, get_enabled_plugins, toggle_plugin, remove_plugin, install_plugin
 from backend.providers import LLMError, list_providers, llm_client
 from context_manager import calculate_messages_tokens, truncate_messages
 from session_manager import session_manager
@@ -37,6 +38,7 @@ agent = Agent()
 graph_agent = GraphAgent()
 
 init_db()
+seed_default_plugins()
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optional[Dict]:
@@ -378,6 +380,7 @@ async def agent_chat(request: Request, user: Dict = Depends(get_current_user), d
             model=llm_opts["model"],
             api_key=llm_opts["api_key"],
             base_url=llm_opts["base_url"],
+            user_id=user["id"] if user else None,
         )
         result["agent_mode"] = agent_mode
         result["session_id"] = session_id
@@ -401,6 +404,55 @@ async def get_tools(user: Dict = Depends(get_current_user)):
     return {"tools": tool_registry.get_tools_list()}
 
 
+@app.get("/api/plugins")
+async def list_plugins(user: Dict = Depends(get_current_user)):
+    return {"plugins": get_all_plugins()}
+
+
+@app.get("/api/plugins/enabled")
+async def list_enabled_plugins(user: Dict = Depends(get_current_user)):
+    return {"plugins": get_enabled_plugins()}
+
+
+@app.put("/api/plugins/{plugin_id}/toggle")
+async def toggle_plugin_endpoint(plugin_id: int, request: Request, user: Dict = Depends(get_current_user)):
+    data = await request.json()
+    enabled = data.get("is_enabled", True)
+    success = toggle_plugin(plugin_id, enabled)
+    if success:
+        return {"success": True}
+    return {"error": "插件不存在"}, 404
+
+
+@app.post("/api/plugins")
+async def install_plugin_endpoint(request: Request, user: Dict = Depends(get_current_user)):
+    if not user:
+        return {"error": "未登录"}, 401
+    data = await request.json()
+    plugin_id = install_plugin(
+        name=data.get("name"),
+        display_name=data.get("display_name"),
+        description=data.get("description", ""),
+        version=data.get("version", "1.0.0"),
+        author=data.get("author", ""),
+        icon=data.get("icon", "🧩"),
+        config=data.get("config"),
+    )
+    if plugin_id:
+        return {"success": True, "id": plugin_id}
+    return {"error": "安装失败，插件名可能已存在"}, 400
+
+
+@app.delete("/api/plugins/{plugin_id}")
+async def uninstall_plugin_endpoint(plugin_id: int, user: Dict = Depends(get_current_user)):
+    if not user:
+        return {"error": "未登录"}, 401
+    success = remove_plugin(plugin_id)
+    if success:
+        return {"success": True}
+    return {"error": "删除失败（默认插件不可删除）"}, 400
+
+
 @app.get("/api/health")
 async def health(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None, base_url: Optional[str] = None, user: Dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if user and db and not api_key:
@@ -422,16 +474,22 @@ async def health(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None
 
 @app.get("/api/memory/stats")
 async def get_memory_stats(user: Dict = Depends(get_current_user)):
-    return memory_manager.get_stats()
+    if not user:
+        return {"short_term_summaries": 0, "long_term_memories": 0}
+    return memory_manager.get_stats(user["id"])
 
 
 @app.get("/api/memory")
 async def get_all_memories(user: Dict = Depends(get_current_user)):
-    return memory_manager.get_all_memories()
+    if not user:
+        return {"short_term": [], "long_term": []}
+    return memory_manager.get_all_memories(user["id"])
 
 
 @app.post("/api/memory")
 async def add_memory(request: Request, user: Dict = Depends(get_current_user)):
+    if not user:
+        return {"error": "未登录"}, 401
     data = await request.json()
     content = data.get("content", "")
     category = data.get("category", "general")
@@ -440,25 +498,33 @@ async def add_memory(request: Request, user: Dict = Depends(get_current_user)):
     if not content:
         return {"error": "内容不能为空"}
 
-    memory_id = memory_manager.add_long_term_memory(content, category, metadata)
+    memory_id = memory_manager.add_long_term_memory(user["id"], content, category, metadata)
     return {"memory_id": memory_id}
 
 
 @app.delete("/api/memory/{memory_id}")
 async def delete_memory(memory_id: str, user: Dict = Depends(get_current_user)):
-    success = memory_manager.long_term.delete_memory(memory_id)
+    if not user:
+        return {"error": "未登录"}, 401
+    from backend.memory.long_term import LongTermMemory
+    long = LongTermMemory(user["id"])
+    success = long.delete_memory(memory_id)
     return {"success": success}
 
 
 @app.get("/api/memory/search")
 async def search_memories(query: str, top_k: int = 5, user: Dict = Depends(get_current_user)):
-    results = memory_manager.retrieve_relevant_memories(query, top_k)
+    if not user:
+        return {"results": []}
+    results = memory_manager.retrieve_relevant_memories(user["id"], query, top_k)
     return {"results": results}
 
 
 @app.delete("/api/memory")
 async def clear_all_memories(user: Dict = Depends(get_current_user)):
-    memory_manager.clear_all()
+    if not user:
+        return {"error": "未登录"}, 401
+    memory_manager.clear_all(user["id"])
     return {"success": True}
 
 

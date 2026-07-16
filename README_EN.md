@@ -1,40 +1,44 @@
 # Jarvis AI Agent
 
+> [中文版](README.md)
+
 An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **local llama.cpp** and **cloud-based LLMs** (DeepSeek, OpenAI, Kimi, GLM, Qwen, etc.), featuring task planning, tool calling, memory mechanisms, session management, and user authentication.
 
 ## Features
 
-- 🔐 **User System**: Register, login, logout with per-user independent model configuration
+- 🔐 **User System**: Register, login, logout with per-user independent model configuration and memory
 - 🎯 **Task Planning**: Based on ReAct mode, decomposes complex tasks into subtasks and formulates execution plans
 - 🔄 **Reflection Mechanism**: Automatically retries and adjusts strategies when tool calls fail
 - 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools
-- 🧠 **Memory System**: Short-term memory (conversation summarization) and long-term memory (important information persistence)
+- 🧩 **Plugin System**: Tools managed as plugins with enable/disable, install/uninstall capabilities
+- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, SQLite backed, per-user isolation
 - 💬 **Multi-turn Conversation**: Complete context management with intelligent truncation strategy
-- 📁 **Session Management**: Create, switch, and delete multiple sessions, with automatic history message saving
+- 📁 **Session Management**: Create, switch, delete sessions with auto-save; session list refreshes in real-time
 - ☁️ **Multi-model Support**: Local llama.cpp + cloud OpenAI-compatible APIs, freely switchable in frontend
 - 🔄 **Quick Model Switching**: Dropdown in header to quickly switch between configured Providers
-- 🗄️ **Database Storage**: Model configs persisted in SQLite on server side, survives browser changes
+- 🗄️ **Database Storage**: Model configs, memories, sessions persisted in SQLite, survives browser changes
 - 🌓 **Theme Switching**: Supports light mode (white background) and dark mode (dark background)
+- 📊 **Performance Monitoring**: Real-time display of response time, Tokens/s, input/output Tokens
 
 ## Supported Model Providers
 
 | Provider | Description |
 |----------|-------------|
-| `llama_cpp` | Local llama.cpp service |
+| `llama_cpp` | Local llama.cpp service (no API Key required) |
 | `deepseek` | DeepSeek Cloud |
 | `openai` | OpenAI GPT Series |
 | `moonshot` | Moonshot (Kimi) |
 | `zhipu` | Zhipu GLM |
 | `dashscope` | Aliyun Qwen |
-| `siliconflow` | SiliconFlow |
+| `siliconflow` | SiliconFlow model aggregation |
 | `custom` | Custom OpenAI-compatible API |
 
 ## Tech Stack
 
 - **Backend**: Python 3.9+, FastAPI, SQLAlchemy, SQLite
-- **LLM**: llama.cpp (local) / OpenAI-compatible API (cloud)
+- **LLMs**: llama.cpp (local) / OpenAI-compatible APIs (cloud)
 - **Frontend**: Vue 3 + Vite + Axios
-- **Authentication**: JWT Token, bcrypt password hashing
+- **Auth**: JWT Token, bcrypt password hashing
 - **Deployment**: Uvicorn
 
 ## Project Structure
@@ -42,47 +46,49 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Agent core logic
+│   ├── agent.py              # Core Agent logic
 │   ├── graph_agent.py        # Graph Agent logic
 │   ├── providers/            # Multi-model Provider abstraction
-│   │   ├── registry.py       # Provider registry
+│   │   ├── registry.py       # Provider registry (hardcoded default configs)
 │   │   ├── client.py         # Unified LLM client
 │   │   └── __init__.py
-│   ├── memory/               # Memory system
-│   │   ├── __init__.py
-│   │   ├── short_term.py
-│   │   └── long_term.py
-│   ├── tools/                # Toolset
+│   ├── memory/               # Memory system (SQLite persistence, user isolation)
+│   │   ├── __init__.py       # MemoryManager
+│   │   ├── short_term.py     # Short-term memory
+│   │   └── long_term.py      # Long-term memory (keyword matching search)
+│   ├── tools/                # Tool set (default plugins)
 │   │   ├── base.py
 │   │   ├── calculator.py
 │   │   ├── datetime_tool.py
 │   │   ├── file_tool.py
 │   │   ├── search.py
 │   │   └── weather.py
-│   ├── config/
-│   │   └── providers.yaml     # Provider template config
-│   ├── database.py            # Database models (User, ModelConfig)
-│   ├── auth.py                # User authentication (JWT, password hash)
+│   ├── database.py            # Database models (User, ModelConfig, ShortTermMemory, LongTermMemory, Plugin)
+│   ├── auth.py                # User authentication (JWT, password hashing)
+│   ├── plugin_manager.py      # Plugin manager (install/uninstall/enable/disable)
 │   └── __init__.py
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ChatPanel.vue      # Chat panel
-│   │   │   ├── SidebarLeft.vue    # Left sidebar (session list)
-│   │   │   ├── SidebarRight.vue   # Right sidebar (model management)
-│   │   │   └── LoginPage.vue      # Login/Register page
-│   │   ├── App.vue                # Main application component
+│   │   │   ├── SidebarLeft.vue    # Left sidebar (session list + navigation)
+│   │   │   ├── SidebarRight.vue   # Right sidebar (memory + performance)
+│   │   │   ├── LoginPage.vue      # Login/Registration page
+│   │   │   ├── PluginPage.vue     # Plugin management page
+│   │   │   └── SettingsPage.vue   # Settings page
+│   │   ├── App.vue                # Main app component
 │   │   ├── main.js                # Entry file
 │   │   └── style.css              # Global styles (with theme variables)
 │   ├── index.html
 │   ├── package.json
 │   ├── vite.config.js
 │   └── jsconfig.json
-├── main.py                 # FastAPI main application
+├── main.py                 # FastAPI main app (API routes)
 ├── session_manager.py      # Session management
 ├── context_manager.py      # Context management
 ├── requirements.txt
-└── README.md
+├── README.md
+└── README_EN.md
 ```
 
 ## Quick Start
@@ -109,7 +115,7 @@ cd frontend
 npm run build
 ```
 
-### 4. Start the Service
+### 4. Start Service
 
 ```bash
 python3 main.py
@@ -119,56 +125,120 @@ python3 main.py
 
 Visit `http://localhost:8000`:
 
-1. **Register** → First time users need to register
-2. **Login** → Login with your credentials
-3. **Configure Model** → Click ⚙️ Settings in top right to configure Provider, API Key
-4. **Start Chatting** → Enter messages in the chat panel
+1. **Register Account** → Register first time
+2. **Login System** → Use registered credentials
+3. **Configure Model** → Left sidebar ⚙️ settings to configure Provider, API Key
+4. **Start Chatting** → Input messages in chat panel
 
 ## User System
 
-Jarvis has a built-in user authentication system:
+Jarvis has built-in user authentication:
 
 | Feature | Description |
 |---------|-------------|
-| Register | Create account with username and password |
-| Login | JWT Token authentication, valid for 30 days |
+| Registration | Fill username and password to register |
+| Login | JWT Token authentication, 30-day validity |
 | Logout | Clear Token, return to login page |
-| Model Config | Each user manages their own model configurations independently |
+| Model Config | Each user manages their own model configs |
+| Memory Isolation | Each user has independent short/long-term memory |
 
-> Model configuration (API Key, Base URL, etc.) is stored in the server-side SQLite database. It persists across browser changes and cache clears.
+> All user data (password hashes, model configs, memories) stored in server SQLite database, survives browser changes or cache clearing.
+
+## Plugin System
+
+Jarvis plugin system manages tools as plugins with enable/disable, install/uninstall capabilities.
+
+### Default Plugins
+
+| Icon | Plugin | Description | Type |
+|------|--------|-------------|------|
+| 🔢 | Calculator | Mathematical expression calculation | Default |
+| 🔍 | Search Engine | Internet information retrieval | Default |
+| 🌤️ | Weather Forecast | City weather query | Default |
+| 📁 | File Operations | File read/write operations | Default |
+| ⏰ | Date/Time | Get time/set timers | Default |
+
+### Plugin Management
+
+Plugin management page (left sidebar navigation → 🧩 plugins) supports:
+
+- **View Plugin List**: Show all installed plugins
+- **Enable/Disable**: Toggle plugin on/off via switches
+- **Install Plugins**: Install new plugins by filling plugin info
+- **Uninstall Plugins**: Completely uninstall non-default plugins
+
+### Plugin API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/plugins` | GET | Get all plugins list |
+| `/api/plugins/enabled` | GET | Get enabled plugins |
+| `/api/plugins/{id}/toggle` | PUT | Toggle plugin enable/disable |
+| `/api/plugins` | POST | Install new plugin |
+| `/api/plugins/{id}` | DELETE | Uninstall plugin |
 
 ## Model Management
 
 ### Quick Model Switching (Header)
 
-The **Quick Model Switch** dropdown in the header shows only configured Providers. Click to switch instantly.
+Header shows **quick model switching** dropdown with only configured Providers, click to switch, Provider configs (API Key, model, base_url) automatically apply.
 
-### Model Settings Panel (⚙️ Right Sidebar)
+### Model Settings Panel (Left Sidebar ⚙️)
 
-In the settings panel you can:
+In left sidebar settings page you can:
 
-- **Select Provider**: Choose from available Providers
-- **Configure API Key / Base URL**: Fill in server connection information
-- **Select Model**: Choose from the Provider's supported model list
-- **Configure Max Tokens**, Agent Mode, etc.
+- **Select Provider**: Choose from available Provider list
+- **Configure API Key / Base URL**: Fill server connection info
+- **Select Model**: Choose from Provider's supported model list (supports dynamic fetching)
+- **Configure Max Tokens**, Agent mode etc.
+- Configured Providers show ✓ and "Configured" label
 
-## Model Provider Configuration Flow
+### Configuration Flow
 
 ```
-First Use
+First time use
     ↓
-⚙️ Settings → Select Provider (e.g., DeepSeek)
+Left sidebar ⚙️ settings → Select Provider (e.g., DeepSeek)
     ↓
-Fill API Key → Select Model → Click Save
+Fill API Key → Select Model → Click save
     ↓
-Configuration persisted to SQLite database
+Config persisted to SQLite database
     ↓
-Provider appears in quick switch dropdown
+Top quick switch dropdown automatically shows that Provider
     ↓
-Subsequent use: switch directly from header, no re-configuration needed
+Subsequent use can directly switch in top, no reconfiguration needed
 ```
 
-## API Endpoints
+## Memory System
+
+| Type | Storage | User Isolation | Features |
+|------|---------|----------------|----------|
+| Short-term | SQLite `short_term_memories` table | ✅ Per user | Recent 10 conversation summaries, auto-overwrite oldest |
+| Long-term | SQLite `long_term_memories` table | ✅ Per user | Keyword matching search, access frequency tracking |
+
+Memory is automatically managed by Agent:
+- Agent generates short-term summaries during conversations
+- Important info extracted as long-term memory
+- Related memory retrieved as context before each conversation
+
+## Interface Layout
+
+### Left Sidebar
+- **Header**: Jarvis Logo + AI Assistant identifier
+- **Navigation**: 💬 Chat / 🧩 Plugins / ⚙️ Settings (vertical)
+- **Chat Page**: Session list + action buttons (new/save/clear)
+- **Plugins/Settings Pages**: Empty area
+
+### Center Area
+- **Chat Page**: ChatPanel interface
+- **Plugins Page**: Plugin management interface
+- **Settings Page**: Model configuration interface
+
+### Right Sidebar (Chat Page Only)
+- **Memory System**: View/manage short/long-term memory
+- **Performance Metrics**: Response time, Tokens/s, input/output Tokens etc.
+
+## API Interfaces
 
 ### Authentication
 
@@ -183,11 +253,11 @@ Subsequent use: switch directly from header, no re-configuration needed
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/providers` | GET | Get available Provider list |
+| `/api/providers` | GET | Get available Providers list |
 | `/api/user/config` | GET | Get current user's model configs |
 | `/api/user/config` | POST | Save current user's model config |
-| `/api/user/config/{id}` | DELETE | Delete specified model config |
-| `/api/models` | GET | Get model list for specified Provider |
+| `/api/user/config/{id}` | DELETE | Delete specific model config |
+| `/api/models` | GET | Get models for specific Provider |
 
 ### Chat
 
@@ -197,7 +267,7 @@ Subsequent use: switch directly from header, no re-configuration needed
 | `/api/agent` | POST | Agent chat (with tool calling) |
 | `/api/health` | GET | Health check (supports `?provider=deepseek`) |
 
-### Session
+### Sessions
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -205,16 +275,16 @@ Subsequent use: switch directly from header, no re-configuration needed
 | `/api/sessions` | GET | Get session list |
 | `/api/session/{id}` | GET | Get session details |
 | `/api/session/{id}` | DELETE | Delete session |
-| `/api/session/{id}/save` | POST | Save session record |
 
 ### Tools / Memory
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/tools` | GET | Get tool list |
-| `/api/memory` | GET | Get memory content |
+| `/api/memory` | GET | Get current user's memory |
 | `/api/memory` | POST | Store memory |
-| `/api/memory` | DELETE | Clear memory |
+| `/api/memory/{memory_id}` | DELETE | Delete specific memory |
+| `/api/memory/search` | GET | Search memory |
 | `/api/memory/stats` | GET | Get memory statistics |
 
 ### Request Parameters (chat / agent)
@@ -229,7 +299,7 @@ Subsequent use: switch directly from header, no re-configuration needed
 }
 ```
 
-> api_key and base_url are automatically used from the current user's database configuration, no need to pass from frontend.
+> api_key and base_url automatically used from current user's database config, no need to pass from frontend.
 
 ## Tool List
 
@@ -239,27 +309,27 @@ Subsequent use: switch directly from header, no re-configuration needed
 | `search` | Internet information retrieval |
 | `weather` | City weather query |
 | `file` | File read/write operations |
-| `datetime` | Date/time and timer |
+| `datetime` | Date/time and timers |
 
 ## Development Mode
 
 Frontend supports hot-reload development mode:
 
 ```bash
-# Start frontend development server
+# Start frontend dev server
 cd frontend
 npm run dev
 ```
 
-Access `http://localhost:5173` for the frontend, backend still needs to run on `http://localhost:8000`.
+Visit `http://localhost:5173` to view frontend, backend still runs on `http://localhost:8000`.
 
 ## Theme Switching
 
-🌞/🌙 toggle button in the top right corner:
+Top-right corner provides 🌞/🌙 theme switching button:
 - **Light Mode**: White background
 - **Dark Mode**: Dark background
 
-Theme preference is automatically saved to localStorage.
+Theme state auto-saved to browser localStorage.
 
 ## License
 
