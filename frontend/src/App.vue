@@ -186,7 +186,6 @@ const handleUpdateStats = (stats) => {
     inputTokens: stats.prompt_tokens || 0,
     totalTokens: stats.total_tokens || 0
   }
-  sessionReloadKey.value++
 }
 
 const handleSettingsChange = async (settings) => {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick, onMounted, watch } from 'vue'
+import { ref, reactive, nextTick, onMounted, watch } from 'vue'
 import { marked } from 'marked'
 import axios from 'axios'
 
@@ -36,6 +36,7 @@ const messages = ref([])
 const messageInput = ref('')
 const chatContainer = ref(null)
 const isProcessing = ref(false)
+const streamStarted = ref(false)
 let abortController = null
 
 const sendMessage = async () => {
@@ -43,6 +44,7 @@ const sendMessage = async () => {
   if (!content || isProcessing.value) return
 
   isProcessing.value = true
+  streamStarted.value = false
   abortController = new AbortController()
 
   const userMsg = {
@@ -54,47 +56,116 @@ const sendMessage = async () => {
   messageInput.value = ''
   await scrollToBottom()
 
+  const endpoint = props.mode === 'agent' ? '/api/agent' : '/api/chat'
+  const requestData = {
+    messages: [{ role: 'user', content }],
+    session_id: props.sessionId,
+    max_tokens: props.settings.max_tokens,
+    provider: props.settings.provider,
+    agent_mode: props.settings.agent_mode
+  }
+  if (props.settings.model) requestData.model = props.settings.model
+
+  // 插入占位 assistant 消息（先 push 索引，后续通过索引更新）
+  const msgIndex = messages.value.length
+  messages.value.push({
+    role: 'assistant',
+    content: '',
+    tool_used: false,
+    tool_info: null,
+    timestamp: new Date().toLocaleString(),
+    stats: null,
+  })
+
+  const getMsg = () => messages.value[msgIndex]
+
   try {
-    const endpoint = props.mode === 'agent' ? '/api/agent' : '/api/chat'
-    
-    const requestData = {
-      messages: [{ role: 'user', content }],
-      session_id: props.sessionId,
-      max_tokens: props.settings.max_tokens,
-      provider: props.settings.provider,
-      agent_mode: props.settings.agent_mode
-    }
-    if (props.settings.model) requestData.model = props.settings.model
-    
-    const response = await axios.post(endpoint, requestData, {
-      signal: abortController.signal
+    const response = await fetch(endpoint + '/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestData),
+      signal: abortController.signal,
     })
 
-    const data = response.data
-    const assistantMsg = {
-      role: 'assistant',
-      content: data.content,
-      tool_used: data.tool_used,
-      tool_info: data.tool_info,
-      timestamp: new Date().toLocaleString(),
-      stats: {
-        response_time: data.response_time,
-        tokens_per_second: data.tokens_per_second,
-        completion_tokens: data.completion_tokens,
-        prompt_tokens: data.prompt_tokens,
-        total_tokens: data.total_tokens
+    if (!response.ok) {
+      const errText = await response.text().catch(() => 'Unknown error')
+      throw new Error(`HTTP ${response.status}: ${errText}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // 保留未完成的行
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const raw = line.slice(6).trim()
+        if (!raw) continue
+
+        let event
+        try { event = JSON.parse(raw) } catch { continue }
+
+        if (!streamStarted.value) streamStarted.value = true
+
+        switch (event.type) {
+          case 'token':
+            getMsg().content += event.content
+            await scrollToBottom()
+            break
+          case 'thinking':
+            getMsg().content += `\n> 💭 ${event.content}\n\n`
+            await scrollToBottom()
+            break
+          case 'tool_call':
+            getMsg().tool_used = true
+            const toolInfo = getMsg().tool_info || []
+            toolInfo.push({
+              tool_name: event.tool_name,
+              parameters: event.parameters,
+              result: '',
+              is_reflection: event.is_reflection || false,
+            })
+            getMsg().tool_info = toolInfo
+            break
+          case 'tool_result':
+            const info = getMsg().tool_info
+            if (info && info.length) {
+              info[info.length - 1].result = event.result
+            }
+            await scrollToBottom()
+            break
+          case 'summary_start':
+            getMsg().content += '\n---\n\n'
+            await scrollToBottom()
+            break
+          case 'done':
+            getMsg().stats = {
+              response_time: event.response_time,
+              completion_tokens: event.completion_tokens,
+              prompt_tokens: event.prompt_tokens,
+              total_tokens: event.total_tokens,
+              tokens_per_second: event.tokens_per_second || 0,
+            }
+            emit('update-stats', getMsg().stats)
+            break
+          case 'error':
+            throw new Error(event.content)
+        }
       }
     }
-    messages.value.push(assistantMsg)
-    
-    emit('update-stats', assistantMsg.stats)
   } catch (error) {
-    if (error.code !== 'ERR_CANCELED') {
-      messages.value.push({
-        role: 'assistant',
-        content: `❌ 请求失败: ${error.message}`,
-        timestamp: new Date().toLocaleString()
-      })
+    if (error.name === 'AbortError') {
+      // 用户取消，保留已生成的内容
+    } else {
+      // 如果已经有部分内容，追加错误信息而不是替换
+      getMsg().content += `\n\n❌ 请求失败: ${error.message}`
     }
   } finally {
     isProcessing.value = false
@@ -217,7 +288,7 @@ watch(() => messages.value.length, scrollToBottom)
         </div>
       </div>
       
-      <div v-if="isProcessing" class="message assistant">
+      <div v-if="isProcessing && !streamStarted" class="message assistant">
         <div class="message-header">
           <span class="message-role assistant">Jarvis</span>
           <span class="message-time">{{ new Date().toLocaleString() }}</span>

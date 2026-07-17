@@ -29,6 +29,7 @@ class User(Base):
     model_configs = relationship("ModelConfig", back_populates="user", cascade="all, delete-orphan")
     short_term_memories = relationship("ShortTermMemory", back_populates="user", cascade="all, delete-orphan")
     long_term_memories = relationship("LongTermMemory", back_populates="user", cascade="all, delete-orphan")
+    chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class ModelConfig(Base):
@@ -77,6 +78,20 @@ class LongTermMemory(Base):
     access_count = Column(Integer, default=1)
 
     user = relationship("User", back_populates="long_term_memories")
+
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(36), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    messages_json = Column(Text, default="[]")
+    title = Column(String(200), default="新会话")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_active = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="chat_sessions")
 
 
 class Plugin(Base):

@@ -26,8 +26,24 @@ class ShortTermMemory:
             ).order_by(ShortTermMemoryModel.timestamp.desc()).all()
 
             if len(all_entries) > self.max_summaries:
-                for old in all_entries[self.max_summaries:]:
+                # 将最旧的超量条目合并压缩，而非直接丢弃
+                old_entries = all_entries[self.max_summaries:]
+                old_texts = [e.summary for e in old_entries if e.summary.strip()]
+                for old in old_entries:
                     db.delete(old)
+
+                if old_texts:
+                    merged_summary = "【历史摘要合并】\n" + "\n---\n".join(old_texts)
+                    merged_entry = ShortTermMemoryModel(
+                        user_id=self.user_id,
+                        summary=merged_summary,
+                        message_count=sum(e.message_count for e in old_entries),
+                        key_points=json.dumps(
+                            [t[:50] for t in old_texts][:5],
+                            ensure_ascii=False,
+                        ),
+                    )
+                    db.add(merged_entry)
 
             db.commit()
         finally:

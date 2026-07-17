@@ -1,5 +1,11 @@
 from typing import Any, Dict, List, Optional
 
+import os
+
+
+def _env_or_default(key: str, default: str) -> str:
+    return os.environ.get(key, default)
+
 
 PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "llama_cpp": {
@@ -7,7 +13,7 @@ PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
         "name": "本地 llama.cpp",
         "description": "本地部署的 GGUF 模型服务",
         "type": "openai_compatible",
-        "base_url": "http://192.168.0.201:8081",
+        "base_url": _env_or_default("LLAMACPP_BASE_URL", "http://192.168.0.201:8081"),
         "api_key": "",
         "requires_api_key": False,
         "api_key_env": None,

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import axios from 'axios'
 
 const memory = ref({ short_term: [], long_term: [] })
@@ -38,6 +38,13 @@ const loadData = async () => {
 }
 
 onMounted(loadData)
+
+// 每次完成新对话后自动刷新记忆列表
+watch(() => props.stats.totalTokens, (newVal, oldVal) => {
+  if (newVal && newVal !== oldVal) {
+    loadData()
+  }
+})
 
 const handleMemoryTabChange = (tab) => {
   activeMemoryTab.value = tab

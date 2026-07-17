@@ -53,6 +53,10 @@ const loadModels = async () => {
   }
 }
 
+const showManualModelInput = computed(() => {
+  return models.value.length === 0 && !isLoadingModels.value
+})
+
 const loadData = async () => {
   try {
     const res = await axios.get('/api/providers')
@@ -108,13 +112,24 @@ const handleSave = async () => {
             <div class="form-group flex-3">
               <label>模型名称</label>
               <div class="model-row">
-                <select v-model="localSettings.model" class="form-select">
+                <!-- 有模型列表时：下拉选择 -->
+                <select v-if="!showManualModelInput" v-model="localSettings.model" class="form-select">
                   <option value="">选择模型...</option>
                   <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
                 </select>
+                <!-- 没有模型列表时：手动输入 -->
+                <input v-else
+                  v-model="localSettings.model"
+                  class="form-input"
+                  placeholder="手动输入模型名称（如 qwen2.5-7b-instruct）"
+                />
                 <button class="btn-secondary" @click="loadModels" :disabled="isLoadingModels">
                   {{ isLoadingModels ? '加载中...' : '🔄 刷新' }}
                 </button>
+              </div>
+              <div v-if="isLoadingModels" class="model-status loading">正在连接服务端获取模型列表...</div>
+              <div v-else-if="showManualModelInput" class="model-status manual">
+                ⚠️ 未能获取模型列表，已切换为手动输入模式
               </div>
             </div>
           </div>
@@ -301,5 +316,22 @@ const handleSave = async () => {
   font-size: 14px;
   color: var(--accent-success);
   font-weight: 500;
+}
+
+.model-status {
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.model-status.loading {
+  color: var(--accent-primary);
+}
+
+.model-status.empty {
+  color: var(--accent-warning, #f59e0b);
+}
+
+.model-status.manual {
+  color: var(--accent-warning, #f59e0b);
 }
 </style>

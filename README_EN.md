@@ -2,7 +2,7 @@
 
 > [中文版](README.md)
 
-An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **local llama.cpp** and **cloud-based LLMs** (DeepSeek, OpenAI, Kimi, GLM, Qwen, etc.), featuring task planning, tool calling, memory mechanisms, session management, and user authentication.
+An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **local llama.cpp** and **cloud-based LLMs** (DeepSeek, OpenAI, Kimi, GLM, Qwen, etc.), featuring task planning, tool calling, memory mechanisms, streaming output, and session management.
 
 ## Features
 
@@ -11,7 +11,8 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 - 🔄 **Reflection Mechanism**: Automatically retries and adjusts strategies when tool calls fail
 - 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools
 - 🧩 **Plugin System**: Tools managed as plugins with enable/disable, install/uninstall capabilities
-- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, SQLite backed, per-user isolation
+- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, backed by SQLite + ChromaDB vector storage, LLM-automated importance scoring (threshold ≥ 6/10)
+- ⚡ **Streaming Output**: SSE (Server-Sent Events) streaming, token-by-token rendering, real-time tool call visualization
 - 💬 **Multi-turn Conversation**: Complete context management with intelligent truncation strategy
 - 📁 **Session Management**: Create, switch, delete sessions with auto-save; session list refreshes in real-time
 - ☁️ **Multi-model Support**: Local llama.cpp + cloud OpenAI-compatible APIs, freely switchable in frontend
@@ -35,9 +36,9 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 
 ## Tech Stack
 
-- **Backend**: Python 3.9+, FastAPI, SQLAlchemy, SQLite
+- **Backend**: Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB (vector storage)
 - **LLMs**: llama.cpp (local) / OpenAI-compatible APIs (cloud)
-- **Frontend**: Vue 3 + Vite + Axios
+- **Frontend**: Vue 3 + Vite + Fetch API (SSE streaming)
 - **Auth**: JWT Token, bcrypt password hashing
 - **Deployment**: Uvicorn
 
@@ -46,16 +47,17 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Core Agent logic
-│   ├── graph_agent.py        # Graph Agent logic
+│   ├── agent.py              # Core Agent logic (with streaming run_stream)
+│   ├── graph_agent.py        # Graph Agent logic (with streaming run_stream)
 │   ├── providers/            # Multi-model Provider abstraction
 │   │   ├── registry.py       # Provider registry (hardcoded default configs)
-│   │   ├── client.py         # Unified LLM client
+│   │   ├── client.py         # Unified LLM client (with streaming chat_completion_stream)
 │   │   └── __init__.py
-│   ├── memory/               # Memory system (SQLite persistence, user isolation)
+│   ├── memory/               # Memory system
 │   │   ├── __init__.py       # MemoryManager
-│   │   ├── short_term.py     # Short-term memory
-│   │   └── long_term.py      # Long-term memory (keyword matching search)
+│   │   ├── short_term.py     # Short-term memory (SQLite)
+│   │   ├── long_term.py      # Long-term memory (SQLite + ChromaDB vector search)
+│   │   └── vector_store.py   # ChromaDB vector store wrapper
 │   ├── tools/                # Tool set (default plugins)
 │   │   ├── base.py
 │   │   ├── calculator.py
@@ -70,7 +72,7 @@ Jarvis/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── ChatPanel.vue      # Chat panel
+│   │   │   ├── ChatPanel.vue      # Chat panel (with SSE streaming reader)
 │   │   │   ├── SidebarLeft.vue    # Left sidebar (session list + navigation)
 │   │   │   ├── SidebarRight.vue   # Right sidebar (memory + performance)
 │   │   │   ├── LoginPage.vue      # Login/Registration page
@@ -83,6 +85,9 @@ Jarvis/
 │   ├── package.json
 │   ├── vite.config.js
 │   └── jsconfig.json
+├── data/                     # Runtime data
+│   ├── jarvis.db             # SQLite database
+│   └── vectors/              # ChromaDB vector store
 ├── main.py                 # FastAPI main app (API routes)
 ├── session_manager.py      # Session management
 ├── context_manager.py      # Context management
@@ -93,7 +98,14 @@ Jarvis/
 
 ## Quick Start
 
-### 1. Install Backend Dependencies
+### 1. Clone Project
+
+```bash
+git clone <repo-url>
+cd Jarvis
+```
+
+### 2. Install Backend Dependencies
 
 ```bash
 python3 -m venv venv
@@ -101,24 +113,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Install Frontend Dependencies
+### 3. Install Frontend Dependencies & Build
 
 ```bash
 cd frontend
 npm install
-```
-
-### 3. Build Frontend
-
-```bash
-cd frontend
 npm run build
 ```
 
 ### 4. Start Service
 
 ```bash
-python3 main.py
+# Use venv Python
+venv/bin/python main.py
 ```
 
 ### 5. Usage
@@ -128,7 +135,7 @@ Visit `http://localhost:8000`:
 1. **Register Account** → Register first time
 2. **Login System** → Use registered credentials
 3. **Configure Model** → Left sidebar ⚙️ settings to configure Provider, API Key
-4. **Start Chatting** → Input messages in chat panel
+4. **Start Chatting** → Input messages in chat panel, streaming output supported
 
 ## User System
 
@@ -211,15 +218,26 @@ Subsequent use can directly switch in top, no reconfiguration needed
 
 ## Memory System
 
-| Type | Storage | User Isolation | Features |
-|------|---------|----------------|----------|
-| Short-term | SQLite `short_term_memories` table | ✅ Per user | Recent 10 conversation summaries, auto-overwrite oldest |
-| Long-term | SQLite `long_term_memories` table | ✅ Per user | Keyword matching search, access frequency tracking |
+| Type | Storage | Retrieval | User Isolation | Features |
+|------|---------|-----------|----------------|----------|
+| Short-term | SQLite `short_term_memories` table | Direct read | ✅ Per user | Auto-generate summary every N turns, auto-overwrite oldest |
+| Long-term | SQLite `long_term_memories` table + ChromaDB vector index | Semantic vector search (top_k=3) | ✅ Per user | LLM importance scoring (threshold ≥ 6/10), vector dedup (similarity ≥ 0.85 skip), time-decay ranking (30-day half-life) |
 
 Memory is automatically managed by Agent:
+
 - Agent generates short-term summaries during conversations
-- Important info extracted as long-term memory
-- Related memory retrieved as context before each conversation
+- LLM analyzes and scores each conversation (1-10) after completion
+- Info with importance ≥ 6 is extracted as long-term memory, stored in SQLite + ChromaDB
+- Related memory retrieved via vector similarity search before each conversation
+- Right sidebar panel for viewing and managing all memories
+
+## Streaming Output
+
+Jarvis supports full SSE (Server-Sent Events) streaming:
+
+- **Token-by-token rendering**: Each LLM-generated token pushed to frontend in real-time
+- **Tool call visualization**: Tool invocation, execution, and reflection displayed in real-time
+- **Event types**: `token`, `thinking`, `tool_call`, `tool_result`, `summary_start`, `done`, `error`
 
 ## Interface Layout
 
@@ -235,7 +253,7 @@ Memory is automatically managed by Agent:
 - **Settings Page**: Model configuration interface
 
 ### Right Sidebar (Chat Page Only)
-- **Memory System**: View/manage short/long-term memory
+- **Memory System**: View/manage short/long-term memory (clear all, single delete)
 - **Performance Metrics**: Response time, Tokens/s, input/output Tokens etc.
 
 ## API Interfaces
@@ -259,12 +277,14 @@ Memory is automatically managed by Agent:
 | `/api/user/config/{id}` | DELETE | Delete specific model config |
 | `/api/models` | GET | Get models for specific Provider |
 
-### Chat
+### Chat (Streaming)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/chat` | POST | Basic chat |
-| `/api/agent` | POST | Agent chat (with tool calling) |
+| `/api/chat/stream` | POST | Basic chat (SSE streaming) |
+| `/api/agent/stream` | POST | Agent chat with tool calling (SSE streaming) |
+| `/api/chat` | POST | Basic chat (non-streaming, legacy) |
+| `/api/agent` | POST | Agent chat (non-streaming, legacy) |
 | `/api/health` | GET | Health check (supports `?provider=deepseek`) |
 
 ### Sessions
@@ -281,13 +301,13 @@ Memory is automatically managed by Agent:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/tools` | GET | Get tool list |
-| `/api/memory` | GET | Get current user's memory |
-| `/api/memory` | POST | Store memory |
-| `/api/memory/{memory_id}` | DELETE | Delete specific memory |
-| `/api/memory/search` | GET | Search memory |
-| `/api/memory/stats` | GET | Get memory statistics |
+| `/api/memory` | GET | Get current user's long-term memory |
+| `/api/memory/stats` | GET | Get memory statistics (short/long counts, total tokens) |
+| `/api/memory` | DELETE | Clear all memories for current user (short + long + vectors) |
+| `/api/memory/{memory_id}` | DELETE | Delete specific long-term memory |
+| `/api/memory/search` | GET | Semantic search long-term memory |
 
-### Request Parameters (chat / agent)
+### Request Parameters (stream endpoints)
 
 ```json
 {

@@ -1,12 +1,21 @@
 import asyncio
 import json
+import logging
 import os
+import re
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Request, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.concurrency import iterate_in_threadpool
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger(__name__)
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from backend.agent import Agent
@@ -17,6 +26,7 @@ from backend.auth import (
     decode_access_token,
     get_user,
 )
+from backend.crypto_utils import encrypt_api_key, decrypt_api_key
 from backend.database import ModelConfig, init_db, get_db
 from backend.graph_agent import GraphAgent
 from backend.memory import memory_manager
@@ -25,11 +35,29 @@ from backend.providers import LLMError, list_providers, llm_client
 from context_manager import calculate_messages_tokens, truncate_messages
 from session_manager import session_manager
 
+load_dotenv()
+
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 dist_dir = os.path.join(os.path.dirname(__file__), "dist")
 if os.path.exists(dist_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(dist_dir, "assets")), name="assets")
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def _validate_password(password: str) -> Optional[str]:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位"
+    if not re.search(r"[A-Za-z]", password):
+        return "密码必须包含至少一个字母"
+    if not re.search(r"\d", password):
+        return "密码必须包含至少一个数字"
+    return None
+
 
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "llama_cpp")
 DEFAULT_AGENT_MODE = os.environ.get("DEFAULT_AGENT_MODE", "graph")
@@ -39,6 +67,11 @@ graph_agent = GraphAgent()
 
 init_db()
 seed_default_plugins()
+session_manager.cleanup_expired_sessions()
+
+# 后台自动下载 Embedding 模型（不阻塞服务启动）
+from backend.memory.embeddings import embedding_generator
+embedding_generator.try_download_model_background()
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optional[Dict]:
@@ -76,7 +109,7 @@ def _extract_llm_options(data: Dict[str, Any], user_id: Optional[int] = None, db
         ).first()
         if config:
             if not options["api_key"] and config.api_key:
-                options["api_key"] = config.api_key
+                options["api_key"] = decrypt_api_key(config.api_key)
             if not options["base_url"] and config.base_url:
                 options["base_url"] = config.base_url
             if not options["model"] and config.default_model:
@@ -101,6 +134,7 @@ async def index(request: Request):
 
 
 @app.post("/api/auth/register")
+@limiter.limit("5/minute")
 async def register(request: Request, db: Session = Depends(get_db)):
     data = await request.json()
     username = data.get("username")
@@ -109,6 +143,22 @@ async def register(request: Request, db: Session = Depends(get_db)):
 
     if not username or not email or not password:
         return {"error": "用户名、邮箱和密码不能为空"}, 400
+
+    username = username.strip()
+    email = email.strip()
+
+    if len(username) < 2:
+        return {"error": "用户名至少 2 个字符"}, 400
+
+    if not re.match(r"^[a-zA-Z0-9_\u4e00-\u9fff]+$", username):
+        return {"error": "用户名只能包含字母、数字、下划线和中文"}, 400
+
+    if "@" not in email or "." not in email:
+        return {"error": "邮箱格式不正确"}, 400
+
+    password_error = _validate_password(password)
+    if password_error:
+        return {"error": password_error}, 400
 
     if get_user(db, username):
         return {"error": "用户名已存在"}, 400
@@ -121,6 +171,7 @@ async def register(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
+@limiter.limit("10/minute")
 async def login(request: Request, db: Session = Depends(get_db)):
     data = await request.json()
     username = data.get("username")
@@ -244,9 +295,12 @@ async def save_user_config(request: Request, user: Dict = Depends(get_current_us
         ModelConfig.is_active == True
     ).first()
 
+    encrypted_api_key = encrypt_api_key(api_key) if api_key else ""
+
     if existing_config:
         existing_config.provider_name = provider_name
-        existing_config.api_key = api_key
+        if api_key:
+            existing_config.api_key = encrypted_api_key
         existing_config.base_url = base_url
         existing_config.default_model = default_model
         existing_config.max_tokens = max_tokens
@@ -256,7 +310,7 @@ async def save_user_config(request: Request, user: Dict = Depends(get_current_us
             user_id=user["id"],
             provider_id=provider_id,
             provider_name=provider_name,
-            api_key=api_key,
+            api_key=encrypted_api_key,
             base_url=base_url,
             default_model=default_model,
             max_tokens=max_tokens,
@@ -295,7 +349,7 @@ async def models(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None
             ModelConfig.is_active == True
         ).first()
         if config and config.api_key:
-            api_key = config.api_key
+            api_key = decrypt_api_key(config.api_key)
         if config and config.base_url:
             base_url = config.base_url
 
@@ -342,6 +396,33 @@ async def chat(request: Request, user: Dict = Depends(get_current_user), db: Ses
             status_code=exc.status_code,
             content={"error": str(exc), "provider": exc.provider},
         )
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: Request, user: Dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    data = await request.json()
+    llm_opts = _extract_llm_options(data, user["id"] if user else None, db)
+
+    messages = data.get("messages", [])
+    max_tokens = data.get("max_tokens", 2048)
+    truncated_messages = truncate_messages(messages, max_tokens)
+
+    async def event_generator():
+        async for event in iterate_in_threadpool(
+            llm_client.chat_completion_stream(
+                messages=truncated_messages,
+                provider_id=llm_opts["provider"],
+                model=llm_opts["model"],
+                max_tokens=max_tokens,
+                api_key=llm_opts["api_key"],
+                base_url=llm_opts["base_url"],
+            )
+        ):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            if event["type"] == "error":
+                break
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/agent")
@@ -391,10 +472,73 @@ async def agent_chat(request: Request, user: Dict = Depends(get_current_user), d
 
         return result
     except LLMError as exc:
+        logger.error(f"LLMError: {exc} (provider: {exc.provider}, status: {exc.status_code})")
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": str(exc), "provider": exc.provider},
         )
+    except Exception as exc:
+        import traceback
+        logger.error(f"Unexpected error in agent_chat:\n{traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.post("/api/agent/stream")
+async def agent_chat_stream(request: Request, user: Dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    data = await request.json()
+    llm_opts = _extract_llm_options(data, user["id"] if user else None, db)
+
+    messages = data.get("messages", [])
+    max_tokens = data.get("max_tokens", 2048)
+    agent_mode = data.get("agent_mode", DEFAULT_AGENT_MODE)
+    session_id = data.get("session_id")
+
+    if not session_id:
+        session_id = session_manager.create_session()
+    else:
+        if session_manager.get_session(session_id) is None:
+            session_manager.create_session(session_id)
+
+    session = session_manager.get_session(session_id)
+    if session:
+        existing_messages = session.messages.copy()
+        if existing_messages:
+            messages = existing_messages + messages
+        session_manager.update_session_messages(session_id, messages)
+
+    current_agent = graph_agent if agent_mode == "graph" else agent
+    run_fn = current_agent.run_stream
+
+    async def event_generator():
+        full_content = ""
+        try:
+            async for event in iterate_in_threadpool(
+                run_fn(
+                    messages,
+                    max_tokens=max_tokens,
+                    provider=llm_opts["provider"],
+                    model=llm_opts["model"],
+                    api_key=llm_opts["api_key"],
+                    base_url=llm_opts["base_url"],
+                    user_id=user["id"] if user else None,
+                )
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event["type"] == "token":
+                    full_content += event.get("content", "")
+                elif event["type"] == "error":
+                    break
+        except Exception as exc:
+            logger.error(f"Stream error: {exc}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
+            return
+
+        # 更新会话消息
+        if session and full_content:
+            session.messages = messages + [{"role": "assistant", "content": full_content}]
+            session_manager.update_session_messages(session_id, session.messages)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/tools")
@@ -462,7 +606,7 @@ async def health(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None
             ModelConfig.is_active == True
         ).first()
         if config and config.api_key:
-            api_key = config.api_key
+            api_key = decrypt_api_key(config.api_key)
         if config and config.base_url:
             base_url = config.base_url
 
@@ -531,4 +675,5 @@ async def clear_all_memories(user: Dict = Depends(get_current_user)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, timeout_keep_alive=300)
+    import os
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), timeout_keep_alive=300)

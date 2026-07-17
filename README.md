@@ -10,8 +10,9 @@
 - 🎯 **任务规划**：基于 ReAct 模式，将复杂任务分解为子任务，制定执行计划
 - 🔄 **反思机制**：工具调用失败时自动重试与策略调整
 - 🛠️ **工具调用**：支持计算器、搜索、天气、文件操作、日期时间等工具
-- � **插件系统**：工具作为插件存在，支持启用/禁用、安装/卸载管理
-- �🧠 **记忆系统**：短期记忆（对话总结）与长期记忆（重要信息持久化），基于 SQLite 存储，每个用户独立
+- 🧩 **插件系统**：工具作为插件存在，支持启用/禁用、安装/卸载管理
+- 🧠 **记忆系统**：短期记忆（对话总结）与长期记忆（重要信息持久化），基于 SQLite + ChromaDB 向量存储，LLM 自动评估重要性（阈值 ≥ 6/10）
+- ⚡ **流式输出**：支持 SSE (Server-Sent Events) 流式输出，逐 token 渲染，工具调用过程实时可见
 - 💬 **多轮对话**：完整的上下文管理与智能截断策略
 - 📁 **会话管理**：支持创建、切换、删除多个会话，历史消息自动保存，会话列表实时刷新
 - ☁️ **多模型支持**：本地 llama.cpp + 云端 OpenAI 兼容 API，前端可自由切换
@@ -35,9 +36,9 @@
 
 ## 技术栈
 
-- **后端**：Python 3.9+, FastAPI, SQLAlchemy, SQLite
+- **后端**：Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB（向量存储）
 - **大模型**：llama.cpp（本地）/ OpenAI 兼容 API（云端）
-- **前端**：Vue 3 + Vite + Axios
+- **前端**：Vue 3 + Vite + Fetch API（SSE 流式读取）
 - **认证**：JWT Token, bcrypt 密码加密
 - **部署**：Uvicorn
 
@@ -46,16 +47,17 @@
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Agent 核心逻辑
-│   ├── graph_agent.py        # Graph Agent 逻辑
+│   ├── agent.py              # Agent 核心逻辑（含流式 run_stream）
+│   ├── graph_agent.py        # Graph Agent 逻辑（含流式 run_stream）
 │   ├── providers/            # 多模型 Provider 抽象
 │   │   ├── registry.py       # Provider 注册表（含硬编码默认配置）
-│   │   ├── client.py         # 统一 LLM 客户端
+│   │   ├── client.py         # 统一 LLM 客户端（含流式 chat_completion_stream）
 │   │   └── __init__.py
-│   ├── memory/               # 记忆系统（SQLite 持久化，用户隔离）
+│   ├── memory/               # 记忆系统
 │   │   ├── __init__.py       # MemoryManager
-│   │   ├── short_term.py     # 短期记忆
-│   │   └── long_term.py      # 长期记忆（含关键词匹配检索）
+│   │   ├── short_term.py     # 短期记忆（SQLite）
+│   │   ├── long_term.py      # 长期记忆（SQLite + ChromaDB 向量检索）
+│   │   └── vector_store.py   # ChromaDB 向量存储封装
 │   ├── tools/                # 工具集（默认插件）
 │   │   ├── base.py
 │   │   ├── calculator.py
@@ -70,7 +72,7 @@ Jarvis/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── ChatPanel.vue      # 聊天面板
+│   │   │   ├── ChatPanel.vue      # 聊天面板（含 SSE 流式读取）
 │   │   │   ├── SidebarLeft.vue    # 左侧导航栏（会话列表+导航）
 │   │   │   ├── SidebarRight.vue   # 右侧记忆+性能面板
 │   │   │   ├── LoginPage.vue      # 登录/注册页面
@@ -83,6 +85,9 @@ Jarvis/
 │   ├── package.json
 │   ├── vite.config.js
 │   └── jsconfig.json
+├── data/                     # 运行时数据
+│   ├── jarvis.db             # SQLite 数据库
+│   └── vectors/              # ChromaDB 向量存储
 ├── main.py                 # FastAPI 主应用（API 路由）
 ├── session_manager.py      # 会话管理
 ├── context_manager.py      # 上下文管理
@@ -93,7 +98,14 @@ Jarvis/
 
 ## 快速开始
 
-### 1. 安装后端依赖
+### 1. 克隆项目
+
+```bash
+git clone <repo-url>
+cd Jarvis
+```
+
+### 2. 安装后端依赖
 
 ```bash
 python3 -m venv venv
@@ -101,24 +113,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. 安装前端依赖
+### 3. 安装前端依赖并构建
 
 ```bash
 cd frontend
 npm install
-```
-
-### 3. 构建前端
-
-```bash
-cd frontend
 npm run build
 ```
 
 ### 4. 启动服务
 
 ```bash
-python3 main.py
+# 使用虚拟环境的 Python 启动
+venv/bin/python main.py
 ```
 
 ### 5. 使用
@@ -128,7 +135,7 @@ python3 main.py
 1. **注册账号** → 首次使用先注册
 2. **登录系统** → 使用注册的账号登录
 3. **配置模型** → 左侧栏 ⚙️ 设置中配置 Provider、API Key
-4. **开始对话** → 在聊天面板输入消息
+4. **开始对话** → 在聊天面板输入消息，支持流式输出
 
 ## 用户系统
 
@@ -211,15 +218,26 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 
 ## 记忆系统
 
-| 类型 | 存储方式 | 用户隔离 | 特性 |
-|------|----------|----------|------|
-| 短期记忆 | SQLite `short_term_memories` 表 | ✅ 每个用户独立 | 最近 10 条对话总结，自动覆盖最旧的 |
-| 长期记忆 | SQLite `long_term_memories` 表 | ✅ 每个用户独立 | 关键词匹配检索，访问频率追踪 |
+| 类型 | 存储方式 | 检索方式 | 用户隔离 | 特性 |
+|------|----------|----------|----------|------|
+| 短期记忆 | SQLite `short_term_memories` 表 | 直接读取 | ✅ 每个用户独立 | 每 N 轮对话自动生成总结，自动覆盖最旧的 |
+| 长期记忆 | SQLite `long_term_memories` 表 + ChromaDB 向量索引 | 语义向量检索（top_k=3） | ✅ 每个用户独立 | LLM 自动评估重要性（阈值 ≥ 6/10），向量去重（相似度 ≥ 0.85 跳过），时间衰减排序（30 天半衰期） |
 
 记忆由 Agent 自动管理：
+
 - 对话过程中 Agent 自动生成短期总结
-- 重要信息自动提取为长期记忆
-- 每次对话前自动检索相关记忆作为上下文
+- 每次对话完成后，LLM 分析对话内容并评分（1-10 分）
+- 重要性 ≥ 6 的信息自动提取为长期记忆，存入 SQLite + ChromaDB
+- 每次对话前自动检索相关记忆（向量相似度检索）作为上下文
+- 右侧面板可查看和管理所有记忆
+
+## 流式输出
+
+Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
+
+- **逐 token 渲染**：LLM 生成的每个 token 实时推送到前端
+- **工具调用可视化**：工具调用、执行、反思过程实时展示
+- **事件类型**：`token`（文本）、`thinking`（思考）、`tool_call`（工具调用）、`tool_result`（工具结果）、`summary_start`（开始总结）、`done`（完成）、`error`（错误）
 
 ## 界面布局
 
@@ -235,7 +253,7 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 - **设置页面**：SettingsPage 模型配置界面
 
 ### 右侧栏（仅聊天页面）
-- **记忆系统**：短期/长期记忆查看与管理
+- **记忆系统**：短期/长期记忆查看与管理（清空、单条删除）
 - **性能指标**：响应时间、Tokens/s、输入/输出 Tokens 等
 
 ## API 接口
@@ -259,12 +277,14 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 | `/api/user/config/{id}` | DELETE | 删除指定模型配置 |
 | `/api/models` | GET | 获取指定 Provider 的模型列表 |
 
-### 对话接口
+### 对话接口（流式）
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/chat` | POST | 基础聊天 |
-| `/api/agent` | POST | Agent 聊天（支持工具调用） |
+| `/api/chat/stream` | POST | 基础聊天（SSE 流式） |
+| `/api/agent/stream` | POST | Agent 聊天，支持工具调用（SSE 流式） |
+| `/api/chat` | POST | 基础聊天（非流式，兼容旧版） |
+| `/api/agent` | POST | Agent 聊天（非流式，兼容旧版） |
 | `/api/health` | GET | 健康检查（支持 `?provider=deepseek`） |
 
 ### 会话接口
@@ -281,13 +301,13 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/tools` | GET | 获取工具列表 |
-| `/api/memory` | GET | 获取当前用户的记忆内容 |
-| `/api/memory` | POST | 存储记忆 |
-| `/api/memory/{memory_id}` | DELETE | 删除指定记忆 |
-| `/api/memory/search` | GET | 搜索记忆 |
-| `/api/memory/stats` | GET | 获取记忆统计 |
+| `/api/memory` | GET | 获取当前用户的长期记忆 |
+| `/api/memory/stats` | GET | 获取记忆统计（短期/长期数量、总 tokens） |
+| `/api/memory` | DELETE | 清空当前用户的所有记忆（含短期+长期+向量） |
+| `/api/memory/{memory_id}` | DELETE | 删除指定长期记忆 |
+| `/api/memory/search` | GET | 语义搜索长期记忆 |
 
-### 请求参数（chat / agent）
+### 请求参数（stream 端点）
 
 ```json
 {
