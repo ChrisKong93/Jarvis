@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import threading
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
@@ -29,9 +30,11 @@ from backend.auth import (
 from backend.crypto_utils import encrypt_api_key, decrypt_api_key
 from backend.database import ModelConfig, init_db, get_db
 from backend.graph_agent import GraphAgent
+from backend.mcp import mcp_manager
 from backend.memory import memory_manager
 from backend.plugin_manager import seed_default_plugins, get_all_plugins, get_enabled_plugins, toggle_plugin, remove_plugin, install_plugin
 from backend.providers import LLMError, list_providers, llm_client
+from backend.tools.base import tool_registry
 from context_manager import calculate_messages_tokens, truncate_messages
 from session_manager import session_manager
 
@@ -60,7 +63,7 @@ def _validate_password(password: str) -> Optional[str]:
 
 
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "llama_cpp")
-DEFAULT_AGENT_MODE = os.environ.get("DEFAULT_AGENT_MODE", "graph")
+DEFAULT_AGENT_MODE = os.environ.get("DEFAULT_AGENT_MODE", "plan_execute")
 
 agent = Agent()
 graph_agent = GraphAgent()
@@ -72,6 +75,37 @@ session_manager.cleanup_expired_sessions()
 # 后台自动下载 Embedding 模型（不阻塞服务启动）
 from backend.memory.embeddings import embedding_generator
 embedding_generator.try_download_model_background()
+
+# ---------------------------------------------------------------------------
+# MCP 初始化
+# ---------------------------------------------------------------------------
+
+def sync_mcp_tools():
+    """将 MCP 工具注册到 tool_registry。"""
+    mcp_tools = mcp_manager.get_all_tools()
+    if not mcp_tools:
+        return
+    count = tool_registry.register_mcp_tools(mcp_tools)
+    if count > 0:
+        logger.info(f"已将 {count} 个 MCP 工具注册到 Agent 工具列表")
+
+
+# 启动 MCP 连接（后台线程，不阻塞服务启动）
+def _start_mcp_background():
+    """在后台线程中连接所有 MCP 服务器，完成后自动注册工具。"""
+    try:
+        logger.info("MCP 后台连接开始...")
+        mcp_manager.reload_config_sync()
+        sync_mcp_tools()
+        if mcp_manager.connections:
+            logger.info(f"MCP 管理器已启动，已连接 {len(mcp_manager.connections)} 个服务器")
+        else:
+            logger.info("MCP 管理器已启动（无有效服务器配置）")
+    except Exception as exc:
+        logger.warning(f"MCP 管理器后台启动异常: {exc}")
+
+
+threading.Thread(target=_start_mcp_background, daemon=True).start()
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optional[Dict]:
@@ -450,7 +484,15 @@ async def agent_chat(request: Request, user: Dict = Depends(get_current_user), d
 
         session_manager.update_session_messages(session_id, messages)
 
-    current_agent = graph_agent if agent_mode == "graph" else agent
+    if agent_mode == "graph":
+        current_agent = graph_agent
+        current_agent_mode = None
+    elif agent_mode == "plan_execute":
+        current_agent = agent
+        current_agent_mode = "plan_execute"
+    else:
+        current_agent = agent
+        current_agent_mode = "react"
 
     try:
         result = await asyncio.to_thread(
@@ -462,6 +504,7 @@ async def agent_chat(request: Request, user: Dict = Depends(get_current_user), d
             api_key=llm_opts["api_key"],
             base_url=llm_opts["base_url"],
             user_id=user["id"] if user else None,
+            mode=current_agent_mode,
         )
         result["agent_mode"] = agent_mode
         result["session_id"] = session_id
@@ -506,7 +549,15 @@ async def agent_chat_stream(request: Request, user: Dict = Depends(get_current_u
             messages = existing_messages + messages
         session_manager.update_session_messages(session_id, messages)
 
-    current_agent = graph_agent if agent_mode == "graph" else agent
+    if agent_mode == "graph":
+        current_agent = graph_agent
+        current_agent_mode = None
+    elif agent_mode == "plan_execute":
+        current_agent = agent
+        current_agent_mode = "plan_execute"
+    else:
+        current_agent = agent
+        current_agent_mode = "react"
     run_fn = current_agent.run_stream
 
     async def event_generator():
@@ -521,6 +572,7 @@ async def agent_chat_stream(request: Request, user: Dict = Depends(get_current_u
                     api_key=llm_opts["api_key"],
                     base_url=llm_opts["base_url"],
                     user_id=user["id"] if user else None,
+                    mode=current_agent_mode,
                 )
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -670,6 +722,137 @@ async def clear_all_memories(user: Dict = Depends(get_current_user)):
         return {"error": "未登录"}, 401
     memory_manager.clear_all(user["id"])
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# MCP 管理 API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/mcp/servers")
+async def get_mcp_servers(user: Dict = Depends(get_current_user)):
+    """获取所有 MCP 服务器连接状态。"""
+    return {"servers": mcp_manager.get_config_snapshot()}
+
+
+@app.get("/api/mcp/tools")
+async def get_mcp_tools(user: Dict = Depends(get_current_user)):
+    """获取所有 MCP 工具列表。"""
+    return {"tools": mcp_manager.get_all_tools()}
+
+
+@app.post("/api/mcp/servers/reload")
+async def reload_mcp_servers(user: Dict = Depends(get_current_user)):
+    """重新加载 MCP 配置并重连所有服务器。"""
+    if not user:
+        return {"error": "未登录"}, 401
+    try:
+        # 注销旧的 MCP 工具
+        count = tool_registry.unregister_mcp_tools()
+        if count > 0:
+            logger.info(f"已注销 {count} 个旧的 MCP 工具")
+
+        mcp_manager.reload_config_sync()
+        sync_mcp_tools()
+        return {"success": True, "message": "MCP 服务器已重新加载"}
+    except Exception as exc:
+        logger.error(f"重新加载 MCP 失败: {exc}")
+        return {"error": str(exc)}, 500
+
+
+@app.post("/api/mcp/servers/{name}/reconnect")
+async def reconnect_mcp_server(name: str, user: Dict = Depends(get_current_user)):
+    """重连指定的 MCP 服务器。"""
+    if not user:
+        return {"error": "未登录"}, 401
+    from backend.mcp.manager import MCPServerConnection
+
+    conn = mcp_manager.connections.get(name)
+    if not conn:
+        return {"error": f"MCP 服务器 '{name}' 不存在"}, 404
+    try:
+        conn.disconnect()
+        configs = mcp_manager._load_config()
+        config = next((c for c in configs if c.get("name") == name), None)
+        if config:
+            new_conn = MCPServerConnection(config)
+            new_conn.connect()
+            mcp_manager.connections[name] = new_conn
+            mcp_manager._rebuild_tool_index()
+            sync_mcp_tools()
+            return {"success": True, "message": f"MCP 服务器 '{name}' 已重连"}
+        return {"error": f"未找到 '{name}' 的配置"}, 404
+    except Exception as exc:
+        logger.error(f"重连 MCP 服务器 '{name}' 失败: {exc}")
+        return {"error": str(exc)}, 500
+
+
+@app.put("/api/mcp/servers/{name}")
+async def update_mcp_server(name: str, request: Request, user: Dict = Depends(get_current_user)):
+    """更新 MCP 服务器配置（保存到配置文件并重连）。"""
+    if not user:
+        return {"error": "未登录"}, 401
+    from backend.mcp.manager import MCP_CONFIG_PATH
+    import json, os
+
+    try:
+        data = await request.json()
+
+        existing = {"servers": []}
+        if os.path.exists(MCP_CONFIG_PATH):
+            with open(MCP_CONFIG_PATH, "r") as f:
+                existing = json.load(f)
+
+        servers = existing.get("servers", [])
+        idx = next((i for i, s in enumerate(servers) if s.get("name") == name), None)
+        new_config = {
+            "name": name,
+            "transport": data.get("transport", "stdio"),
+            "command": data.get("command", ""),
+            "args": data.get("args", []),
+            "env": data.get("env", {}),
+            "url": data.get("url", ""),
+        }
+        if idx is not None:
+            servers[idx] = new_config
+        else:
+            servers.append(new_config)
+
+        existing["servers"] = servers
+        with open(MCP_CONFIG_PATH, "w") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        tool_registry.unregister_mcp_tools()
+        mcp_manager.reload_config_sync()
+        sync_mcp_tools()
+        return {"success": True, "message": f"MCP 服务器 '{name}' 已更新"}
+    except Exception as exc:
+        logger.error(f"更新 MCP 服务器 '{name}' 失败: {exc}")
+        return {"error": str(exc)}, 500
+
+
+@app.delete("/api/mcp/servers/{name}")
+async def delete_mcp_server(name: str, user: Dict = Depends(get_current_user)):
+    """删除 MCP 服务器配置。"""
+    if not user:
+        return {"error": "未登录"}, 401
+    from backend.mcp.manager import MCP_CONFIG_PATH
+    import json, os
+
+    try:
+        if os.path.exists(MCP_CONFIG_PATH):
+            with open(MCP_CONFIG_PATH, "r") as f:
+                existing = json.load(f)
+            existing["servers"] = [s for s in existing.get("servers", []) if s.get("name") != name]
+            with open(MCP_CONFIG_PATH, "w") as f:
+                json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        tool_registry.unregister_mcp_tools()
+        mcp_manager.reload_config_sync()
+        sync_mcp_tools()
+        return {"success": True, "message": f"MCP 服务器 '{name}' 已删除"}
+    except Exception as exc:
+        logger.error(f"删除 MCP 服务器 '{name}' 失败: {exc}")
+        return {"error": str(exc)}, 500
 
 
 if __name__ == "__main__":

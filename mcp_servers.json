@@ -1,0 +1,16 @@
+{
+  "description": "Jarvis MCP 服务器配置文件。在此添加你的 MCP 服务器。",
+  "servers": [
+    {
+      "name": "web-fetch",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@fnnm/fetch"
+      ],
+      "env": {},
+      "url": ""
+    }
+  ]
+}

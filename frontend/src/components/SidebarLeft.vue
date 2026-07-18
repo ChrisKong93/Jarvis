@@ -154,6 +154,10 @@ const formatTime = (isoString) => {
         <span class="nav-icon">🧩</span>
         <span class="nav-label">插件</span>
       </button>
+      <button :class="['nav-item', { active: activeNav === 'mcp' }]" @click="switchNav('mcp')">
+        <span class="nav-icon">🔌</span>
+        <span class="nav-label">MCP</span>
+      </button>
       <button :class="['nav-item', { active: activeNav === 'settings' }]" @click="switchNav('settings')">
         <span class="nav-icon">⚙️</span>
         <span class="nav-label">设置</span>

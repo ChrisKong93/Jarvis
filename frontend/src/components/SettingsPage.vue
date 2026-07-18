@@ -156,8 +156,9 @@ const handleSave = async () => {
             <div class="form-group">
               <label>Agent 模式</label>
               <select v-model="localSettings.agent_mode" class="form-select" style="max-width: 200px">
-                <option value="graph">Graph Agent</option>
-                <option value="standard">Standard Agent</option>
+                <option value="graph">Graph Agent（流程图）</option>
+                <option value="plan_execute">Plan-and-Execute（规划执行）</option>
+                <option value="standard">Standard Agent（标准 ReAct）</option>
               </select>
             </div>
           </div>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue'
 import ChatPanel from '@/components/ChatPanel.vue'
+import MCPServerPage from '@/components/MCPServerPage.vue'
 import SidebarLeft from '@/components/SidebarLeft.vue'
 import SidebarRight from '@/components/SidebarRight.vue'
 import LoginPage from '@/components/LoginPage.vue'
@@ -30,7 +31,7 @@ const currentSettings = ref({
   api_key: '',
   base_url: '',
   max_tokens: 2048,
-  agent_mode: 'graph'
+  agent_mode: 'plan_execute'
 })
 
 const userConfigs = ref([])
@@ -80,7 +81,7 @@ const loadSettingsFromServer = async () => {
         api_key: '',
         base_url: config.base_url || '',
         max_tokens: config.max_tokens || 2048,
-        agent_mode: config.agent_mode || 'graph'
+        agent_mode: config.agent_mode || 'plan_execute'
       }
       localStorage.setItem('jarvis-provider-id', config.provider_id)
     } else {
@@ -206,7 +207,7 @@ const handleQuickSwitch = async (providerId) => {
       api_key: '',
       base_url: config.base_url || '',
       max_tokens: config.max_tokens || 2048,
-      agent_mode: config.agent_mode || 'graph'
+      agent_mode: config.agent_mode || 'plan_execute'
     }
   } else if (provider) {
     currentSettings.value = {
@@ -342,6 +343,7 @@ watch(sessionId, (newSessionId) => {
       
       <ChatPanel v-if="activePage === 'chat'" :mode="currentMode" :settings="currentSettings" :session-id="sessionId" @open-settings="handleOpenSettings" @update-stats="handleUpdateStats" />
       <PluginPage v-else-if="activePage === 'plugins'" class="page-content" />
+      <MCPServerPage v-else-if="activePage === 'mcp'" class="page-content" />
       <SettingsPage v-else-if="activePage === 'settings'" :settings="currentSettings" @settings-change="handleSettingsChange" />
     </main>
     

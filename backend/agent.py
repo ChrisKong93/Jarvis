@@ -93,7 +93,87 @@ class Agent:
 
 请直接调用工具，不要说其他废话。"""
 
-    def _parse_tool_call(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _build_planning_prompt(self, memory_context: Dict) -> str:
+        prompt = """你是 Plan-and-Execute 架构中的"规划器"(Planner)。
+
+你的任务是：根据用户的问题，制定一个清晰的逐步执行计划。
+
+要求：
+1. 将复杂任务分解为 2-6 个具体步骤
+2. 每个步骤应包含一个明确可执行的动作
+3. 步骤之间要有逻辑顺序
+4. 如果问题简单（如打招呼、闲聊），直接回答即可，不要编造计划
+
+请严格按 JSON 格式回复（不要加 markdown 代码标记）：
+对于需要计划的问题：
+{"need_plan": true, "plan": [{"step": 1, "description": "步骤描述", "suggested_tool": "calculator/weather/search/datetime/file/null"}, ...]}
+
+对于不需要计划的问题（简单问候、闲聊等）：
+{"need_plan": false, "direct_response": "直接回复的内容"}"""
+        if memory_context.get("used"):
+            prompt += f"\n\n## 相关记忆\n{memory_context.get('text', '')}"
+        return prompt
+
+    def _build_executor_prompt(self, step_index: int, total_steps: int, step_desc: str, all_results: List[Dict]) -> str:
+        results_text = ""
+        if all_results:
+            results_text = "\n\n## 已完成的步骤结果\n"
+            for r in all_results:
+                results_text += f"- 步骤{r['step']}: {r['description']}\n"
+                if r.get("tool_result"):
+                    results_text += f"  工具结果: {r['tool_result']}\n"
+                if r.get("answer"):
+                    results_text += f"  回答: {r['answer']}\n"
+
+        return f"""你是 Plan-and-Execute 架构中的"执行器"(Executor)。
+
+当前进度：步骤 {step_index}/{total_steps}
+当前步骤描述：{step_desc}
+
+你的任务：
+1. 如果当前步骤需要调用工具，请直接调用对应的工具
+2. 如果当前步骤不需要工具，用自然语言回答步骤描述的问题
+3. 不要提前执行后续步骤
+{results_text}"""
+
+    def _generate_plan(
+        self,
+        query: str,
+        provider: str = "llama_cpp",
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        memory_context: Optional[Dict] = None,
+    ) -> Dict:
+        """生成执行计划。返回 {"need_plan": bool, "plan": [...], "direct_response": str}"""
+        messages = [
+            {"role": "system", "content": self._build_planning_prompt(memory_context or {})},
+            {"role": "user", "content": query},
+        ]
+        try:
+            response = self._call_llm(
+                messages,
+                max_tokens=1024,
+                provider=provider,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+            )
+            content = response["content"].strip()
+            # 去掉可能的 markdown 代码标记
+            if content.startswith("```"):
+                lines = content.split("\n")
+                content = "\n".join(l for l in lines if not l.startswith("```"))
+            parsed = json.loads(content)
+            if parsed.get("need_plan") and isinstance(parsed.get("plan"), list):
+                return {"need_plan": True, "plan": parsed["plan"], "llm_response": response}
+            return {"need_plan": False, "direct_response": parsed.get("direct_response", ""), "llm_response": response}
+        except (json.JSONDecodeError, Exception) as e:
+            return {"need_plan": False, "direct_response": "", "llm_response": None}
+
+    def _parse_tool_calls(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """从 LLM 响应中提取所有工具调用。"""
+        tool_calls = []
         if response.get("tool_calls"):
             for tc in response["tool_calls"]:
                 if tc.get("type") == "function":
@@ -102,23 +182,45 @@ class Agent:
                         params = json.loads(func.get("arguments", "{}"))
                     except json.JSONDecodeError:
                         params = {}
-                    return {
+                    tool_calls.append({
                         "name": func.get("name"),
                         "parameters": params,
-                    }
-        
-        text = response.get("content", "")
-        pattern = r"<tool_call>(.*?)</tool_call>"
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            try:
-                tool_call = json.loads(match.group(1))
-                if isinstance(tool_call, dict) and "name" in tool_call and "parameters" in tool_call:
-                    return tool_call
-            except json.JSONDecodeError:
-                pass
+                    })
 
-        return None
+        if not tool_calls:
+            text = response.get("content", "")
+            pattern = r"<tool_call>(.*?)</tool_call>"
+            matches = re.findall(pattern, text, re.DOTALL)
+            for m in matches:
+                try:
+                    tc = json.loads(m)
+                    if isinstance(tc, dict) and "name" in tc and "parameters" in tc:
+                        tool_calls.append(tc)
+                except json.JSONDecodeError:
+                    pass
+
+        return tool_calls
+
+    def _execute_tools_parallel(self, tool_calls: List[Dict]) -> List[Dict]:
+        """并行执行多个工具调用。"""
+        import concurrent.futures
+
+        def _execute_one(tc: Dict) -> Dict:
+            name = tc["name"]
+            params = tc["parameters"]
+            result = self._execute_tool(name, params)
+            return {"tool_name": name, "parameters": params, "result": result}
+
+        if len(tool_calls) <= 1:
+            return [_execute_one(tc) for tc in tool_calls]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
+            future_to_idx = {pool.submit(_execute_one, tc): i for i, tc in enumerate(tool_calls)}
+            results = [None] * len(tool_calls)
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
+            return results
 
     def _execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> str:
         tool = tool_registry.get_tool(tool_name)
@@ -129,6 +231,53 @@ class Agent:
                 return f"工具执行错误：{str(e)}"
         return f"未找到工具：{tool_name}"
 
+    def _execute_step(
+        self,
+        step_desc: str,
+        step_index: int,
+        total_steps: int,
+        all_results: List[Dict],
+        tools_for_llm: List[Dict],
+        provider: str = "llama_cpp",
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        """执行计划中的一个步骤，返回执行结果。"""
+        executor_prompt = self._build_executor_prompt(step_index, total_steps, step_desc, all_results)
+        messages = [{"role": "system", "content": executor_prompt}, {"role": "user", "content": step_desc}]
+
+        response = self._call_llm(
+            messages,
+            max_tokens=max_tokens,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            tools=tools_for_llm,
+        )
+
+        tool_calls = self._parse_tool_calls(response)
+        if tool_calls:
+            tc = tool_calls[0]  # 每个步骤只执行第一个工具调用
+            result = self._execute_tool(tc["name"], tc["parameters"])
+            return {
+                "tool_name": tc["name"],
+                "parameters": tc["parameters"],
+                "tool_result": result,
+                "answer": None,
+                "llm_response": response,
+            }
+
+        return {
+            "tool_name": None,
+            "parameters": None,
+            "tool_result": None,
+            "answer": response.get("content", ""),
+            "llm_response": response,
+        }
+
     def run(
         self,
         messages: List[Dict],
@@ -138,12 +287,19 @@ class Agent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         user_id: Optional[int] = None,
+        mode: str = "react",
     ) -> Dict[str, Any]:
         start_time = time.time()
 
         truncated_messages = truncate_messages(messages, max_tokens)
         last_user_message = messages[-1]["content"] if messages else ""
         memory_context = memory_manager.get_context(user_id, last_user_message)
+
+        if mode == "plan_execute":
+            return self._run_plan_execute(
+                messages, truncated_messages, last_user_message, memory_context,
+                max_tokens, provider, model, api_key, base_url, user_id, start_time,
+            )
 
         system_prompt = self._build_system_prompt()
         if memory_context["used"]:
@@ -182,68 +338,69 @@ class Agent:
             total_llm_time += llm_response.get("response_time", 0)
             used_model = llm_response.get("model") or used_model
 
-            tool_call = self._parse_tool_call(llm_response)
+            tool_calls = self._parse_tool_calls(llm_response)
 
-            if not tool_call and step_count == 0:
+            if not tool_calls and step_count == 0:
                 guessed_tool = self._guess_tool_for_query(last_user_message)
                 if guessed_tool:
                     thinking_steps.append(f"模型未调用工具，自动匹配到 {guessed_tool} 工具")
                     if guessed_tool == "calculator":
                         match = re.search(r'[\d+\-*/().%\s]+', last_user_message)
                         expression = match.group(0).strip() if match else last_user_message
-                        tool_call = {"name": "calculator", "parameters": {"expression": expression}}
+                        tool_calls = [{"name": "calculator", "parameters": {"expression": expression}}]
                     elif guessed_tool == "weather":
                         cities = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "重庆", "天津", "苏州", "郑州", "长沙", "东莞"]
                         city = next((c for c in cities if c in last_user_message), "北京")
-                        tool_call = {"name": "weather", "parameters": {"city": city}}
+                        tool_calls = [{"name": "weather", "parameters": {"city": city}}]
                     elif guessed_tool == "datetime":
-                        tool_call = {"name": "datetime", "parameters": {"action": "now"}}
+                        tool_calls = [{"name": "datetime", "parameters": {"action": "now"}}]
                     elif guessed_tool == "search":
-                        tool_call = {"name": "search", "parameters": {"query": last_user_message}}
+                        tool_calls = [{"name": "search", "parameters": {"query": last_user_message}}]
                     elif guessed_tool == "file":
-                        tool_call = {"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}
+                        tool_calls = [{"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}]
 
-            if tool_call:
+            if tool_calls:
                 tool_used = True
 
-                tool_name = tool_call["name"]
-                parameters = tool_call["parameters"]
+                # 并行执行所有工具
+                results = self._execute_tools_parallel(tool_calls)
 
-                tool_result = self._execute_tool(tool_name, parameters)
+                for r in results:
+                    tool_info_list.append(r)
 
-                tool_info_list.append(
+                # 构建一个 assistant 消息（包含所有 tool_calls）
+                assistant_tc = [
                     {
-                        "tool_name": tool_name,
-                        "parameters": parameters,
-                        "result": tool_result,
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                        },
                     }
-                )
+                    for tc in tool_calls
+                ]
+                current_messages.append({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": assistant_tc,
+                })
+                # 每个结果追加一条 tool 消息
+                for r in results:
+                    current_messages.append({"role": "tool", "content": r["result"]})
 
-                is_error = "错误" in tool_result or "失败" in tool_result
+                has_error = any("错误" in r["result"] or "失败" in r["result"] for r in results)
 
-                current_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [{
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": json.dumps(parameters, ensure_ascii=False),
-                            },
-                        }],
-                    }
-                )
-                current_messages.append({"role": "tool", "content": tool_result})
-
-                if is_error and reflection_count < self.max_reflection_attempts:
+                if has_error and reflection_count < self.max_reflection_attempts:
                     reflection_count += 1
                     thinking_steps.append(f"反思第{reflection_count}次：工具调用失败，尝试调整策略")
+
+                    # 取第一个出错的结果作为反思上下文
+                    last_error = next((r["result"] for r in results if "错误" in r["result"] or "失败" in r["result"]), results[-1]["result"])
 
                     reflect_messages = current_messages + [
                         {
                             "role": "assistant",
-                            "content": f"反思：工具执行失败。上一步结果：{tool_result}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
+                            "content": f"反思：工具执行失败。上一步结果：{last_error}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
                         }
                     ]
 
@@ -256,37 +413,36 @@ class Agent:
                         base_url=base_url,
                         tools=tools_for_llm,
                     )
+                    total_completion_tokens += reflect_response.get("completion_tokens", 0)
+                    total_prompt_tokens += reflect_response.get("prompt_tokens", 0)
+                    total_llm_time += reflect_response.get("response_time", 0)
+                    used_model = reflect_response.get("model") or used_model
 
-                    reflect_tool_call = self._parse_tool_call(reflect_response)
+                    reflect_tool_calls = self._parse_tool_calls(reflect_response)
 
-                    if reflect_tool_call:
-                        reflect_tool_name = reflect_tool_call["name"]
-                        reflect_params = reflect_tool_call["parameters"]
-                        reflect_result = self._execute_tool(reflect_tool_name, reflect_params)
+                    if reflect_tool_calls:
+                        reflect_results = self._execute_tools_parallel(reflect_tool_calls)
+                        for rr in reflect_results:
+                            rr["is_reflection"] = True
+                            tool_info_list.append(rr)
 
-                        tool_info_list.append(
+                        reflect_assistant_tc = [
                             {
-                                "tool_name": reflect_tool_name,
-                                "parameters": reflect_params,
-                                "result": reflect_result,
-                                "is_reflection": True,
+                                "type": "function",
+                                "function": {
+                                    "name": tc["name"],
+                                    "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                                },
                             }
-                        )
-
-                        current_messages.append(
-                            {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{
-                                    "type": "function",
-                                    "function": {
-                                        "name": reflect_tool_name,
-                                        "arguments": json.dumps(reflect_params, ensure_ascii=False),
-                                    },
-                                }],
-                            }
-                        )
-                        current_messages.append({"role": "tool", "content": reflect_result})
+                            for tc in reflect_tool_calls
+                        ]
+                        current_messages.append({
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": reflect_assistant_tc,
+                        })
+                        for rr in reflect_results:
+                            current_messages.append({"role": "tool", "content": rr["result"]})
                     else:
                         final_response = reflect_response["content"]
                         break
@@ -366,6 +522,7 @@ class Agent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         user_id: Optional[int] = None,
+        mode: str = "react",
     ) -> Generator[Dict[str, Any], None, None]:
         """流式运行 agent，逐事件产出。
 
@@ -383,6 +540,13 @@ class Agent:
         truncated_messages = truncate_messages(messages, max_tokens)
         last_user_message = messages[-1]["content"] if messages else ""
         memory_context = memory_manager.get_context(user_id, last_user_message)
+
+        if mode == "plan_execute":
+            yield from self._run_stream_plan_execute(
+                messages, truncated_messages, last_user_message, memory_context,
+                max_tokens, provider, model, api_key, base_url, user_id, start_time,
+            )
+            return
 
         system_prompt = self._build_system_prompt()
         if memory_context["used"]:
@@ -419,10 +583,10 @@ class Agent:
         llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + llm_response.get("response_time", 0)
         used_model = llm_response.get("model") or model
 
-        tool_call = self._parse_tool_call(llm_response)
+        tool_calls = self._parse_tool_calls(llm_response)
 
         # 自动匹配
-        if not tool_call:
+        if not tool_calls:
             guessed_tool = self._guess_tool_for_query(last_user_message)
             if guessed_tool:
                 thinking_steps.append(f"模型未调用工具，自动匹配到 {guessed_tool} 工具")
@@ -430,56 +594,64 @@ class Agent:
                 if guessed_tool == "calculator":
                     match = re.search(r'[\d+\-*/().%\s]+', last_user_message)
                     expression = match.group(0).strip() if match else last_user_message
-                    tool_call = {"name": "calculator", "parameters": {"expression": expression}}
+                    tool_calls = [{"name": "calculator", "parameters": {"expression": expression}}]
                 elif guessed_tool == "weather":
                     cities = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "重庆", "天津", "苏州", "郑州", "长沙", "东莞"]
                     city = next((c for c in cities if c in last_user_message), "北京")
-                    tool_call = {"name": "weather", "parameters": {"city": city}}
+                    tool_calls = [{"name": "weather", "parameters": {"city": city}}]
                 elif guessed_tool == "datetime":
-                    tool_call = {"name": "datetime", "parameters": {"action": "now"}}
+                    tool_calls = [{"name": "datetime", "parameters": {"action": "now"}}]
                 elif guessed_tool == "search":
-                    tool_call = {"name": "search", "parameters": {"query": last_user_message}}
+                    tool_calls = [{"name": "search", "parameters": {"query": last_user_message}}]
                 elif guessed_tool == "file":
-                    tool_call = {"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}
+                    tool_calls = [{"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}]
 
-        # ---------- 第二阶段：执行工具 ----------
-        if tool_call:
-            yield {"type": "tool_call", "tool_name": tool_call["name"], "parameters": tool_call["parameters"]}
+        # ---------- 第二阶段：并行执行工具 ----------
+        if tool_calls:
+            # yield 所有工具调用事件
+            for tc in tool_calls:
+                yield {"type": "tool_call", "tool_name": tc["name"], "parameters": tc["parameters"]}
 
-            tool_result = self._execute_tool(tool_call["name"], tool_call["parameters"])
+            # 并行执行
+            results = self._execute_tools_parallel(tool_calls)
             tool_used = True
 
-            tool_results.append({
-                "tool_name": tool_call["name"],
-                "parameters": tool_call["parameters"],
-                "result": tool_result,
-            })
-            yield {"type": "tool_result", "tool_name": tool_call["name"], "result": tool_result}
+            for r in results:
+                tool_results.append(r)
+                yield {"type": "tool_result", "tool_name": r["tool_name"], "result": r["result"]}
 
+            # 构建 assistant 消息（包含所有 tool_calls）
+            assistant_tc = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                    },
+                }
+                for tc in tool_calls
+            ]
             current_messages.append({
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{
-                    "type": "function",
-                    "function": {
-                        "name": tool_call["name"],
-                        "arguments": json.dumps(tool_call["parameters"], ensure_ascii=False),
-                    },
-                }],
+                "tool_calls": assistant_tc,
             })
-            current_messages.append({"role": "tool", "content": tool_result})
+            for r in results:
+                current_messages.append({"role": "tool", "content": r["result"]})
 
-            is_error = "错误" in tool_result or "失败" in tool_result
+            has_error = any("错误" in r["result"] or "失败" in r["result"] for r in results)
 
             # 反思
-            if is_error and reflection_count < self.max_reflection_attempts:
+            if has_error and reflection_count < self.max_reflection_attempts:
                 reflection_count += 1
                 thinking_steps.append(f"反思第{reflection_count}次：工具调用失败，尝试调整策略")
                 yield {"type": "thinking", "content": thinking_steps[-1]}
 
+                last_error = next((r["result"] for r in results if "错误" in r["result"] or "失败" in r["result"]), results[-1]["result"])
+
                 reflect_messages = current_messages + [{
                     "role": "assistant",
-                    "content": f"反思：工具执行失败。上一步结果：{tool_result}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
+                    "content": f"反思：工具执行失败。上一步结果：{last_error}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
                 }]
 
                 try:
@@ -501,30 +673,34 @@ class Agent:
                 llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + reflect_response.get("response_time", 0)
                 used_model = reflect_response.get("model") or used_model
 
-                reflect_tool_call = self._parse_tool_call(reflect_response)
-                if reflect_tool_call:
-                    yield {"type": "tool_call", "tool_name": reflect_tool_call["name"], "parameters": reflect_tool_call["parameters"], "is_reflection": True}
-                    reflect_result = self._execute_tool(reflect_tool_call["name"], reflect_tool_call["parameters"])
-                    tool_results.append({
-                        "tool_name": reflect_tool_call["name"],
-                        "parameters": reflect_tool_call["parameters"],
-                        "result": reflect_result,
-                        "is_reflection": True,
-                    })
-                    yield {"type": "tool_result", "tool_name": reflect_tool_call["name"], "result": reflect_result, "is_reflection": True}
+                reflect_tool_calls = self._parse_tool_calls(reflect_response)
+                if reflect_tool_calls:
+                    for rtc in reflect_tool_calls:
+                        yield {"type": "tool_call", "tool_name": rtc["name"], "parameters": rtc["parameters"], "is_reflection": True}
 
+                    reflect_results = self._execute_tools_parallel(reflect_tool_calls)
+                    for rr in reflect_results:
+                        rr["is_reflection"] = True
+                        tool_results.append(rr)
+                        yield {"type": "tool_result", "tool_name": rr["tool_name"], "result": rr["result"], "is_reflection": True}
+
+                    reflect_assistant_tc = [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                            },
+                        }
+                        for tc in reflect_tool_calls
+                    ]
                     current_messages.append({
                         "role": "assistant",
                         "content": "",
-                        "tool_calls": [{
-                            "type": "function",
-                            "function": {
-                                "name": reflect_tool_call["name"],
-                                "arguments": json.dumps(reflect_tool_call["parameters"], ensure_ascii=False),
-                            },
-                        }],
+                        "tool_calls": reflect_assistant_tc,
                     })
-                    current_messages.append({"role": "tool", "content": reflect_result})
+                    for rr in reflect_results:
+                        current_messages.append({"role": "tool", "content": rr["result"]})
                 else:
                     final_response = reflect_response["content"]
 
@@ -588,6 +764,353 @@ class Agent:
             "tool_info": tool_results if tool_results else None,
             "thinking": thinking_steps,
             "reflection_count": reflection_count,
+            "completion_tokens": llm_stats["completion_tokens"],
+            "prompt_tokens": llm_stats["prompt_tokens"],
+            "total_tokens": llm_stats["completion_tokens"] + llm_stats["prompt_tokens"],
+            "tokens_per_second": tokens_per_second,
+            "response_time": round(elapsed_time, 2),
+            "provider": provider,
+            "model": llm_stats.get("model") or model,
+        }
+
+    def _run_plan_execute(
+        self,
+        messages: List[Dict],
+        truncated_messages: List[Dict],
+        last_user_message: str,
+        memory_context: Dict,
+        max_tokens: int,
+        provider: str,
+        model: Optional[str],
+        api_key: Optional[str],
+        base_url: Optional[str],
+        user_id: Optional[int],
+        start_time: float,
+    ) -> Dict[str, Any]:
+        """Plan-and-Execute 模式的完整执行流程。"""
+        tools_for_llm = self._get_tools_for_llm()
+        total_completion_tokens = 0
+        total_prompt_tokens = 0
+        total_llm_time = 0
+        used_model = model
+        thinking_steps = []
+        plan_steps = []
+        tool_results = []
+        tool_used = False
+
+        # ---- 阶段 1: 生成计划 ----
+        plan_result = self._generate_plan(
+            last_user_message,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            memory_context=memory_context,
+        )
+
+        if plan_result.get("llm_response"):
+            resp = plan_result["llm_response"]
+            total_completion_tokens += resp.get("completion_tokens", 0)
+            total_prompt_tokens += resp.get("prompt_tokens", 0)
+            total_llm_time += resp.get("response_time", 0)
+            used_model = resp.get("model") or used_model
+
+        if not plan_result.get("need_plan"):
+            direct_response = plan_result.get("direct_response", "")
+            if direct_response:
+                return {
+                    "content": direct_response,
+                    "tool_used": False,
+                    "tool_info": None,
+                    "thinking": thinking_steps,
+                    "reflection_count": 0,
+                    "memory_saved": False,
+                    "memory_context": memory_context,
+                    "context_tokens": calculate_messages_tokens(truncated_messages),
+                    "original_messages_count": len(messages),
+                    "truncated_messages_count": len(truncated_messages),
+                    "completion_tokens": total_completion_tokens,
+                    "prompt_tokens": total_prompt_tokens,
+                    "total_tokens": total_completion_tokens + total_prompt_tokens,
+                    "tokens_per_second": 0,
+                    "response_time": round(time.time() - start_time, 2),
+                    "provider": provider,
+                    "model": used_model,
+                }
+            # fallback: 退回到普通 ReAct 模式
+            return self.run(
+                messages, max_tokens, provider, model, api_key, base_url, user_id, mode="react"
+            )
+
+        plan = plan_result["plan"]
+        total_steps = len(plan)
+        for step in plan:
+            plan_steps.append(f"步骤{step['step']}: {step['description']}")
+
+        # ---- 阶段 2: 逐步执行 ----
+        step_results = []
+        for i, step in enumerate(plan):
+            step_num = step["step"]
+            step_desc = step["description"]
+
+            thinking_steps.append(f"正在执行步骤 {step_num}/{total_steps}: {step_desc}")
+
+            step_result = self._execute_step(
+                step_desc=step_desc,
+                step_index=step_num,
+                total_steps=total_steps,
+                all_results=step_results,
+                tools_for_llm=tools_for_llm,
+                provider=provider,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                max_tokens=max_tokens,
+            )
+
+            resp = step_result.get("llm_response", {})
+            total_completion_tokens += resp.get("completion_tokens", 0)
+            total_prompt_tokens += resp.get("prompt_tokens", 0)
+            total_llm_time += resp.get("response_time", 0)
+            used_model = resp.get("model") or used_model
+
+            if step_result.get("tool_name"):
+                tool_used = True
+                tool_results.append({
+                    "tool_name": step_result["tool_name"],
+                    "parameters": step_result["parameters"],
+                    "result": step_result["tool_result"],
+                    "step": step_num,
+                })
+
+            step_results.append({
+                "step": step_num,
+                "description": step_desc,
+                "tool_name": step_result.get("tool_name"),
+                "tool_result": step_result.get("tool_result"),
+                "answer": step_result.get("answer"),
+            })
+
+            if step_result.get("tool_name"):
+                thinking_steps.append(
+                    f"步骤{step_num} → 调用了 {step_result['tool_name']}: {step_result['tool_result'][:100]}"
+                )
+            elif step_result.get("answer"):
+                thinking_steps.append(f"步骤{step_num} → {step_result['answer'][:100]}")
+
+        # ---- 阶段 3: 汇总生成最终回答 ----
+        step_summary = "\n".join(
+            f"步骤{r['step']} ({r['description']}): "
+            + (f"工具结果: {r['tool_result']}" if r.get('tool_result') else f"回答: {r['answer']}")
+            for r in step_results
+        )
+
+        sanitized = [{"role": "system", "content": "你是一个 AI 助手。请根据以下逐步执行的结果，用自然友好的语言给用户一个完整、清晰的回答。"}]
+        sanitized += truncated_messages
+        sanitized.append({"role": "user", "content": f"## 执行结果\n{step_summary}\n\n请根据以上结果，回答用户的原始问题。"})
+
+        final_response = self._call_llm(
+            sanitized,
+            max_tokens=max_tokens,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+        )
+        total_completion_tokens += final_response.get("completion_tokens", 0)
+        total_prompt_tokens += final_response.get("prompt_tokens", 0)
+        total_llm_time += final_response.get("response_time", 0)
+        used_model = final_response.get("model") or used_model
+        final_answer = final_response.get("content", "")
+
+        # ---- 记忆更新 ----
+        self._update_memories(
+            messages, final_answer,
+            provider=provider, model=model, api_key=api_key, base_url=base_url, user_id=user_id,
+        )
+
+        elapsed_time = time.time() - start_time
+        tokens_per_second = round(total_completion_tokens / total_llm_time, 2) if total_llm_time > 0 else 0
+
+        return {
+            "content": final_answer,
+            "tool_used": tool_used,
+            "tool_info": tool_results if tool_results else None,
+            "thinking": thinking_steps,
+            "plan": plan_steps,
+            "reflection_count": 0,
+            "memory_saved": False,
+            "memory_context": memory_context,
+            "context_tokens": calculate_messages_tokens(truncated_messages),
+            "original_messages_count": len(messages),
+            "truncated_messages_count": len(truncated_messages),
+            "completion_tokens": total_completion_tokens,
+            "prompt_tokens": total_prompt_tokens,
+            "total_tokens": total_completion_tokens + total_prompt_tokens,
+            "tokens_per_second": tokens_per_second,
+            "response_time": round(elapsed_time, 2),
+            "provider": provider,
+            "model": used_model,
+        }
+
+    def _run_stream_plan_execute(
+        self,
+        messages: List[Dict],
+        truncated_messages: List[Dict],
+        last_user_message: str,
+        memory_context: Dict,
+        max_tokens: int,
+        provider: str,
+        model: Optional[str],
+        api_key: Optional[str],
+        base_url: Optional[str],
+        user_id: Optional[int],
+        start_time: float,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """流式 Plan-and-Execute 执行流程。"""
+        tools_for_llm = self._get_tools_for_llm()
+        llm_stats = {"completion_tokens": 0, "prompt_tokens": 0, "model": model}
+        thinking_steps = []
+        tool_results = []
+        step_results = []
+        tool_used = False
+
+        # ---- 阶段 1: 生成计划 ----
+        plan_result = self._generate_plan(
+            last_user_message,
+            provider=provider, model=model, api_key=api_key, base_url=base_url,
+            memory_context=memory_context,
+        )
+        if plan_result.get("llm_response"):
+            resp = plan_result["llm_response"]
+            llm_stats["completion_tokens"] += resp.get("completion_tokens", 0)
+            llm_stats["prompt_tokens"] += resp.get("prompt_tokens", 0)
+            llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + resp.get("response_time", 0)
+            used_model = resp.get("model") or model
+
+        if not plan_result.get("need_plan"):
+            direct_response = plan_result.get("direct_response", "")
+            if direct_response:
+                yield {"type": "token", "content": direct_response}
+                yield self._build_done_event(
+                    direct_response, False, None, thinking_steps, tool_results,
+                    llm_stats, memory_context, truncated_messages, messages, start_time,
+                    provider, model,
+                )
+                return
+            # fallback 到普通 ReAct
+            yield from self.run_stream(
+                messages, max_tokens, provider, model, api_key, base_url, user_id, mode="react",
+            )
+            return
+
+        plan = plan_result["plan"]
+        plan_steps = [f"步骤{s['step']}: {s['description']}" for s in plan]
+        yield {"type": "plan", "plan": plan, "steps": plan_steps}
+
+        # ---- 阶段 2: 逐步执行 ----
+        for i, step in enumerate(plan):
+            step_num = step["step"]
+            step_desc = step["description"]
+            # yield {"type": "thinking", "content": f"▶️ 正在执行步骤 {step_num}/{len(plan)}: {step_desc}"}
+
+            step_result = self._execute_step(
+                step_desc=step_desc, step_index=step_num, total_steps=len(plan),
+                all_results=step_results, tools_for_llm=tools_for_llm,
+                provider=provider, model=model, api_key=api_key, base_url=base_url,
+                max_tokens=max_tokens,
+            )
+
+            resp = step_result.get("llm_response", {})
+            llm_stats["completion_tokens"] += resp.get("completion_tokens", 0)
+            llm_stats["prompt_tokens"] += resp.get("prompt_tokens", 0)
+            llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + resp.get("response_time", 0)
+            used_model = resp.get("model") or used_model
+
+            if step_result.get("tool_name"):
+                tool_used = True
+                yield {"type": "tool_call", "tool_name": step_result["tool_name"], "parameters": step_result["parameters"], "step": step_num}
+                tool_results.append({
+                    "tool_name": step_result["tool_name"],
+                    "parameters": step_result["parameters"],
+                    "result": step_result["tool_result"],
+                    "step": step_num,
+                })
+                yield {"type": "tool_result", "tool_name": step_result["tool_name"], "result": step_result["tool_result"], "step": step_num}
+
+            step_results.append({
+                "step": step_num, "description": step_desc,
+                "tool_name": step_result.get("tool_name"),
+                "tool_result": step_result.get("tool_result"),
+                "answer": step_result.get("answer"),
+            })
+
+            if step_result.get("tool_name"):
+                thinking_steps.append(f"步骤{step_num} → 调用了 {step_result['tool_name']}")
+            elif step_result.get("answer"):
+                thinking_steps.append(f"步骤{step_num} → 完成")
+
+        # ---- 阶段 3: 汇总生成最终回答 ----
+        yield {"type": "summary_start"}
+
+        step_summary = "\n".join(
+            f"步骤{r['step']} ({r['description']}): "
+            + (f"工具结果: {r['tool_result']}" if r.get('tool_result') else f"回答: {r['answer']}")
+            for r in step_results
+        )
+
+        final_messages = [
+            {"role": "system", "content": "你是一个 AI 助手。请根据以下逐步执行的结果，用自然友好的语言给用户一个完整、清晰的回答。"}
+        ] + truncated_messages + [
+            {"role": "user", "content": f"## 执行结果\n{step_summary}\n\n请根据以上结果，回答用户的原始问题。"}
+        ]
+
+        final_response = ""
+        try:
+            for event in llm_client.chat_completion_stream(
+                messages=final_messages,
+                provider_id=provider, model=used_model, max_tokens=max_tokens,
+                api_key=api_key, base_url=base_url,
+            ):
+                if event["type"] == "token":
+                    final_response += event["content"]
+                    yield {"type": "token", "content": event["content"]}
+                elif event["type"] == "error":
+                    yield event
+                    return
+                elif event["type"] == "done":
+                    llm_stats["model"] = event.get("model") or used_model
+        except LLMError as exc:
+            yield {"type": "error", "content": str(exc)}
+            return
+
+        self._update_memories(
+            messages, final_response,
+            provider=provider, model=model, api_key=api_key, base_url=base_url, user_id=user_id,
+        )
+
+        yield self._build_done_event(
+            final_response, tool_used, tool_results if tool_results else None,
+            thinking_steps, tool_results, llm_stats, memory_context,
+            truncated_messages, messages, start_time, provider, model,
+        )
+
+    @staticmethod
+    def _build_done_event(
+        final_response, tool_used, tool_info, thinking_steps, tool_results,
+        llm_stats, memory_context, truncated_messages, messages,
+        start_time, provider, model,
+    ) -> Dict:
+        elapsed_time = time.time() - start_time
+        llm_time = llm_stats.get("llm_time", 0)
+        tokens_per_second = round(llm_stats["completion_tokens"] / llm_time, 2) if llm_time > 0 else 0
+        return {
+            "type": "done",
+            "content": final_response,
+            "tool_used": tool_used,
+            "tool_info": tool_info,
+            "thinking": thinking_steps,
+            "reflection_count": 0,
             "completion_tokens": llm_stats["completion_tokens"],
             "prompt_tokens": llm_stats["prompt_tokens"],
             "total_tokens": llm_stats["completion_tokens"] + llm_stats["prompt_tokens"],

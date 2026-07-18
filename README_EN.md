@@ -6,20 +6,26 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 
 ## Features
 
-- 🔐 **User System**: Register, login, logout with per-user independent model configuration and memory
-- 🎯 **Task Planning**: Based on ReAct mode, decomposes complex tasks into subtasks and formulates execution plans
+- 🔐 **User System**: Register, login, logout with password validation (≥8 chars, letter + digit required), per-user independent model configuration and memory
+- 🎯 **Task Planning**: Three Agent modes supported
+  - **Graph Agent** (default): LangGraph-based directed graph orchestration with node-based execution (prepare → call LLM → parallel tool execution → reflection → generate response → update memory)
+  - **Plan & Execute**: Analyze and plan first, then execute tools step by step
+  - **ReAct**: Think → Act → Observe loop
 - 🔄 **Reflection Mechanism**: Automatically retries and adjusts strategies when tool calls fail
-- 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools
+- 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools with **parallel execution**
 - 🧩 **Plugin System**: Tools managed as plugins with enable/disable, install/uninstall capabilities
-- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, backed by SQLite + ChromaDB vector storage, LLM-automated importance scoring (threshold ≥ 6/10)
+- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, backed by SQLite + ChromaDB vector storage, LLM-automated importance scoring (threshold ≥ 6/10), background embedding model download
+- 🔐 **API Key Encryption**: Fernet (PBKDF2) encrypted storage for user API Keys
+- 🔗 **MCP Protocol Support**: Integrated Model Context Protocol with stdio and SSE transport, connect external MCP servers to extend tool capabilities
 - ⚡ **Streaming Output**: SSE (Server-Sent Events) streaming, token-by-token rendering, real-time tool call visualization
 - 💬 **Multi-turn Conversation**: Complete context management with intelligent truncation strategy
-- 📁 **Session Management**: Create, switch, delete sessions with auto-save; session list refreshes in real-time
+- 📁 **Session Management**: Create, switch, delete sessions with auto title preview, auto-save history
 - ☁️ **Multi-model Support**: Local llama.cpp + cloud OpenAI-compatible APIs, freely switchable in frontend
 - 🔄 **Quick Model Switching**: Dropdown in header to quickly switch between configured Providers
 - 🗄️ **Database Storage**: Model configs, memories, sessions persisted in SQLite, survives browser changes
 - 🌓 **Theme Switching**: Supports light mode (white background) and dark mode (dark background)
 - 📊 **Performance Monitoring**: Real-time display of response time, Tokens/s, input/output Tokens
+- 🚦 **Rate Limiting**: Login/register endpoints throttled via slowapi
 
 ## Supported Model Providers
 
@@ -38,8 +44,10 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 
 - **Backend**: Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB (vector storage)
 - **LLMs**: llama.cpp (local) / OpenAI-compatible APIs (cloud)
+- **Agent Framework**: LangGraph (Graph Agent mode)
 - **Frontend**: Vue 3 + Vite + Fetch API (SSE streaming)
 - **Auth**: JWT Token, bcrypt password hashing
+- **Security**: Fernet (PBKDF2) API Key encryption
 - **Deployment**: Uvicorn
 
 ## Project Structure
@@ -47,8 +55,12 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Core Agent logic (with streaming run_stream)
-│   ├── graph_agent.py        # Graph Agent logic (with streaming run_stream)
+│   ├── agent.py              # Core Agent logic (ReAct / Plan&Execute, with streaming run_stream)
+│   ├── graph_agent.py        # Graph Agent logic (LangGraph-based, with streaming run_stream)
+│   ├── crypto_utils.py       # API Key encryption/decryption (Fernet + PBKDF2)
+│   ├── auth.py               # User authentication (JWT, password hashing)
+│   ├── database.py           # Database models (User, ModelConfig, ShortTermMemory, LongTermMemory, Plugin, ChatSession)
+│   ├── plugin_manager.py     # Plugin manager (install/uninstall/enable/disable)
 │   ├── providers/            # Multi-model Provider abstraction
 │   │   ├── registry.py       # Provider registry (hardcoded default configs)
 │   │   ├── client.py         # Unified LLM client (with streaming chat_completion_stream)
@@ -57,26 +69,28 @@ Jarvis/
 │   │   ├── __init__.py       # MemoryManager
 │   │   ├── short_term.py     # Short-term memory (SQLite)
 │   │   ├── long_term.py      # Long-term memory (SQLite + ChromaDB vector search)
+│   │   ├── embeddings.py     # Embedding generation (sentence-transformers, with fallback pseudo-vector)
 │   │   └── vector_store.py   # ChromaDB vector store wrapper
 │   ├── tools/                # Tool set (default plugins)
-│   │   ├── base.py
+│   │   ├── base.py           # Tool registry (with MCP tool registration)
 │   │   ├── calculator.py
 │   │   ├── datetime_tool.py
 │   │   ├── file_tool.py
 │   │   ├── search.py
 │   │   └── weather.py
-│   ├── database.py            # Database models (User, ModelConfig, ShortTermMemory, LongTermMemory, Plugin)
-│   ├── auth.py                # User authentication (JWT, password hashing)
-│   ├── plugin_manager.py      # Plugin manager (install/uninstall/enable/disable)
-│   └── __init__.py
+│   └── mcp/                  # MCP (Model Context Protocol) integration
+│       ├── __init__.py
+│       ├── manager.py        # MCP server manager (JSON-RPC 2.0, supports stdio/SSE)
+│       └── adapter.py        # MCP tool adapter
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ChatPanel.vue      # Chat panel (with SSE streaming reader)
-│   │   │   ├── SidebarLeft.vue    # Left sidebar (session list + navigation)
+│   │   │   ├── SidebarLeft.vue    # Left sidebar (session list + navigation, MCP nav)
 │   │   │   ├── SidebarRight.vue   # Right sidebar (memory + performance)
 │   │   │   ├── LoginPage.vue      # Login/Registration page
 │   │   │   ├── PluginPage.vue     # Plugin management page
+│   │   │   ├── MCPServerPage.vue  # MCP server management page
 │   │   │   └── SettingsPage.vue   # Settings page
 │   │   ├── App.vue                # Main app component
 │   │   ├── main.js                # Entry file
@@ -88,9 +102,10 @@ Jarvis/
 ├── data/                     # Runtime data
 │   ├── jarvis.db             # SQLite database
 │   └── vectors/              # ChromaDB vector store
+├── mcp_servers.json          # MCP server config file (optional)
 ├── main.py                 # FastAPI main app (API routes)
-├── session_manager.py      # Session management
-├── context_manager.py      # Context management
+├── session_manager.py      # Session management (SQLite persistence)
+├── context_manager.py      # Context management & Token truncation
 ├── requirements.txt
 ├── README.md
 └── README_EN.md
@@ -132,9 +147,9 @@ venv/bin/python main.py
 
 Visit `http://localhost:8000`:
 
-1. **Register Account** → Register first time
+1. **Register Account** → First time register (password ≥ 8 chars, must contain letter + digit)
 2. **Login System** → Use registered credentials
-3. **Configure Model** → Left sidebar ⚙️ settings to configure Provider, API Key
+3. **Configure Model** → Left sidebar ⚙️ settings to configure Provider, API Key (encrypted storage)
 4. **Start Chatting** → Input messages in chat panel, streaming output supported
 
 ## User System
@@ -143,13 +158,25 @@ Jarvis has built-in user authentication:
 
 | Feature | Description |
 |---------|-------------|
-| Registration | Fill username and password to register |
-| Login | JWT Token authentication, 30-day validity |
+| Registration | Fill username, email and password to register (password ≥ 8 chars, letter + digit required) |
+| Login | JWT Token authentication, 30-day validity; rate limited |
 | Logout | Clear Token, return to login page |
-| Model Config | Each user manages their own model configs |
+| Model Config | Each user manages their own model configs (API Key encrypted) |
 | Memory Isolation | Each user has independent short/long-term memory |
 
 > All user data (password hashes, model configs, memories) stored in server SQLite database, survives browser changes or cache clearing.
+
+## Agent Modes
+
+Jarvis supports three Agent modes, selectable in settings page or request parameters:
+
+| Mode | Description |
+|------|-------------|
+| `graph` (default) | LangGraph-based directed graph orchestration: prepare state → call LLM → parallel tool execution → reflect → generate response → update memory. Supports parallel tool calls |
+| `plan_execute` | LLM analyzes task and creates an execution plan, then executes tools step by step |
+| `react` | Classic ReAct (Think → Act → Observe) loop |
+
+> Default mode configurable via `DEFAULT_AGENT_MODE` environment variable.
 
 ## Plugin System
 
@@ -184,6 +211,57 @@ Plugin management page (left sidebar navigation → 🧩 plugins) supports:
 | `/api/plugins` | POST | Install new plugin |
 | `/api/plugins/{id}` | DELETE | Uninstall plugin |
 
+## MCP (Model Context Protocol) Integration
+
+Jarvis supports [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), allowing connection to external MCP servers to extend tool capabilities.
+
+### Transport Types
+
+| Type | Description |
+|------|-------------|
+| `stdio` | Communication via subprocess stdin/stdout (local command) |
+| `sse` | Communication via HTTP POST + SSE (remote service) |
+
+### Configuration
+
+Create a `mcp_servers.json` file in the project root:
+
+```json
+{
+  "servers": [
+    {
+      "name": "my-server",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["path/to/server.js"],
+      "env": {"API_KEY": "xxx"}
+    },
+    {
+      "name": "remote-server",
+      "transport": "sse",
+      "url": "http://localhost:3000/mcp"
+    }
+  ]
+}
+```
+
+MCP config path can be customized via `MCP_CONFIG_PATH` environment variable.
+
+### MCP Management Page
+
+Left sidebar navigation → 🔗 MCP Servers, view connected MCP servers and their tools.
+
+### MCP Management API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mcp/servers` | GET | Get all MCP server connection status |
+| `/api/mcp/tools` | GET | Get all MCP tools list |
+| `/api/mcp/servers/reload` | POST | Reload MCP config and reconnect all servers |
+| `/api/mcp/servers/{name}/reconnect` | POST | Reconnect specific MCP server |
+| `/api/mcp/servers/{name}` | PUT | Update MCP server configuration |
+| `/api/mcp/servers/{name}` | DELETE | Delete MCP server configuration |
+
 ## Model Management
 
 ### Quick Model Switching (Header)
@@ -195,9 +273,9 @@ Header shows **quick model switching** dropdown with only configured Providers, 
 In left sidebar settings page you can:
 
 - **Select Provider**: Choose from available Provider list
-- **Configure API Key / Base URL**: Fill server connection info
+- **Configure API Key / Base URL**: Fill server connection info (API Key encrypted)
 - **Select Model**: Choose from Provider's supported model list (supports dynamic fetching)
-- **Configure Max Tokens**, Agent mode etc.
+- **Configure Max Tokens**, Agent mode (graph / plan_execute / react)
 - Configured Providers show ✓ and "Configured" label
 
 ### Configuration Flow
@@ -207,7 +285,7 @@ First time use
     ↓
 Left sidebar ⚙️ settings → Select Provider (e.g., DeepSeek)
     ↓
-Fill API Key → Select Model → Click save
+Fill API Key → Select Model → Click save (Key encrypted)
     ↓
 Config persisted to SQLite database
     ↓
@@ -228,6 +306,7 @@ Memory is automatically managed by Agent:
 - Agent generates short-term summaries during conversations
 - LLM analyzes and scores each conversation (1-10) after completion
 - Info with importance ≥ 6 is extracted as long-term memory, stored in SQLite + ChromaDB
+- Embedding model (default all-MiniLM-L6-v2) auto-downloads in background, falls back to pseudo-vector mode when unavailable
 - Related memory retrieved via vector similarity search before each conversation
 - Right sidebar panel for viewing and managing all memories
 
@@ -243,13 +322,14 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 
 ### Left Sidebar
 - **Header**: Jarvis Logo + AI Assistant identifier
-- **Navigation**: 💬 Chat / 🧩 Plugins / ⚙️ Settings (vertical)
+- **Navigation**: 💬 Chat / 🧩 Plugins / 🔗 MCP Servers / ⚙️ Settings (vertical)
 - **Chat Page**: Session list + action buttons (new/save/clear)
-- **Plugins/Settings Pages**: Empty area
+- **Plugins/MCP/Settings Pages**: Content area
 
 ### Center Area
 - **Chat Page**: ChatPanel interface
 - **Plugins Page**: Plugin management interface
+- **MCP Page**: MCPServerPage MCP management interface
 - **Settings Page**: Model configuration interface
 
 ### Right Sidebar (Chat Page Only)
@@ -262,8 +342,8 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/auth/register` | POST | User registration |
-| `/api/auth/login` | POST | User login (returns JWT Token) |
+| `/api/auth/register` | POST | User registration (password ≥ 8 chars, letter+digit; 5/min rate limit) |
+| `/api/auth/login` | POST | User login (returns JWT Token; 10/min rate limit) |
 | `/api/auth/logout` | POST | User logout |
 | `/api/auth/me` | GET | Get current user info |
 
@@ -273,7 +353,7 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 |----------|--------|-------------|
 | `/api/providers` | GET | Get available Providers list |
 | `/api/user/config` | GET | Get current user's model configs |
-| `/api/user/config` | POST | Save current user's model config |
+| `/api/user/config` | POST | Save current user's model config (includes agent_mode) |
 | `/api/user/config/{id}` | DELETE | Delete specific model config |
 | `/api/models` | GET | Get models for specific Provider |
 
@@ -292,7 +372,7 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/session` | POST | Create session |
-| `/api/sessions` | GET | Get session list |
+| `/api/sessions` | GET | Get session list (with title/preview) |
 | `/api/session/{id}` | GET | Get session details |
 | `/api/session/{id}` | DELETE | Delete session |
 
@@ -302,10 +382,22 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 |----------|--------|-------------|
 | `/api/tools` | GET | Get tool list |
 | `/api/memory` | GET | Get current user's long-term memory |
+| `/api/memory` | POST | Manually add long-term memory |
 | `/api/memory/stats` | GET | Get memory statistics (short/long counts, total tokens) |
 | `/api/memory` | DELETE | Clear all memories for current user (short + long + vectors) |
 | `/api/memory/{memory_id}` | DELETE | Delete specific long-term memory |
 | `/api/memory/search` | GET | Semantic search long-term memory |
+
+### MCP Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mcp/servers` | GET | Get all MCP server connection status |
+| `/api/mcp/tools` | GET | Get all MCP tools list |
+| `/api/mcp/servers/reload` | POST | Reload MCP config and reconnect |
+| `/api/mcp/servers/{name}/reconnect` | POST | Reconnect specific MCP server |
+| `/api/mcp/servers/{name}` | PUT | Update MCP server configuration |
+| `/api/mcp/servers/{name}` | DELETE | Delete MCP server |
 
 ### Request Parameters (stream endpoints)
 
@@ -315,7 +407,8 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
   "session_id": "your-session-id",
   "max_tokens": 2048,
   "provider": "deepseek",
-  "model": "deepseek-chat"
+  "model": "deepseek-chat",
+  "agent_mode": "graph"
 }
 ```
 
@@ -330,6 +423,18 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 | `weather` | City weather query |
 | `file` | File read/write operations |
 | `datetime` | Date/time and timers |
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEFAULT_PROVIDER` | `llama_cpp` | Default model Provider |
+| `DEFAULT_AGENT_MODE` | `plan_execute` | Default Agent mode (graph / plan_execute / react) |
+| `PORT` | `8000` | Service port |
+| `SECRET_KEY` | `jarvis-secret-key-change-in-production` | API Key encryption key (change in production) |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model name |
+| `MCP_CONFIG_PATH` | `./mcp_servers.json` | MCP server config file path |
+| `MCP_CONNECT_TIMEOUT` | `60` | MCP server connection timeout (seconds) |
 
 ## Development Mode
 

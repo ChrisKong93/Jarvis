@@ -21,7 +21,7 @@ const props = defineProps({
       api_key: '',
       base_url: '',
       max_tokens: 2048,
-      agent_mode: 'graph'
+      agent_mode: 'plan_execute'
     })
   },
   sessionId: {
@@ -38,6 +38,21 @@ const chatContainer = ref(null)
 const isProcessing = ref(false)
 const streamStarted = ref(false)
 let abortController = null
+
+// 折叠状态
+const collapsedSections = reactive({})
+
+const toggleCollapse = (msgIndex, key) => {
+  const id = `${msgIndex}-${key}`
+  collapsedSections[id] = !collapsedSections[id]
+}
+
+const isCollapsed = (msgIndex, key) => {
+  const id = `${msgIndex}-${key}`
+  // 计划默认展开，工具默认收起
+  const defaultCollapsed = key !== 'plan'
+  return collapsedSections[id] !== undefined ? collapsedSections[id] : defaultCollapsed
+}
 
 const sendMessage = async () => {
   const content = messageInput.value.trim()
@@ -73,6 +88,7 @@ const sendMessage = async () => {
     content: '',
     tool_used: false,
     tool_info: null,
+    plan: null,         // 计划步骤列表
     timestamp: new Date().toLocaleString(),
     stats: null,
   })
@@ -121,6 +137,10 @@ const sendMessage = async () => {
             break
           case 'thinking':
             getMsg().content += `\n> 💭 ${event.content}\n\n`
+            await scrollToBottom()
+            break
+          case 'plan':
+            getMsg().plan = event.steps || event.plan || []
             await scrollToBottom()
             break
           case 'tool_call':
@@ -230,7 +250,8 @@ const loadSessionMessages = async (sessionId) => {
       content: m.content,
       timestamp: m.timestamp || new Date().toLocaleString(),
       stats: m.stats || null,
-      tool_info: m.tool_info || null
+      tool_info: m.tool_info || null,
+      plan: m.plan || null,
     }))
     await scrollToBottom()
   } catch (e) {
@@ -267,18 +288,49 @@ watch(() => messages.value.length, scrollToBottom)
             <button class="msg-action-btn" @click="handleQuoteMessage(index)">引用</button>
           </div>
         </div>
-        
-        <div class="message-content" v-html="marked(message.content)"></div>
-        
-        <div v-if="message.tool_info && message.tool_info.length" class="tool-result">
-          <div v-for="(tool, idx) in message.tool_info" :key="idx">
-            <strong>工具调用:</strong> {{ tool.tool_name }}
-            <br>
-            <strong>参数:</strong> {{ JSON.stringify(tool.parameters) }}
-            <br>
-            <strong>结果:</strong> {{ tool.result }}
+
+        <!-- 计划步骤（Plan-and-Execute） -->
+        <div v-if="message.plan && message.plan.length" class="section-card plan-section">
+          <div class="section-header" @click="toggleCollapse(index, 'plan')">
+            <span class="section-icon">📋</span>
+            <span class="section-title">执行计划（{{ message.plan.length }} 步）</span>
+            <span class="collapse-arrow">{{ isCollapsed(index, 'plan') ? '▶' : '▼' }}</span>
+          </div>
+          <div v-if="!isCollapsed(index, 'plan')" class="section-body">
+            <div v-for="(step, si) in message.plan" :key="si" class="plan-step">
+              <span class="step-number">{{ si + 1 }}</span>
+              <span class="step-text">{{ step }}</span>
+            </div>
           </div>
         </div>
+
+        <!-- 工具调用信息（可折叠） -->
+        <div v-if="message.tool_info && message.tool_info.length" class="section-card tool-section">
+          <div class="section-header" @click="toggleCollapse(index, 'tool')">
+            <span class="section-icon">🔧</span>
+            <span class="section-title">工具调用（{{ message.tool_info.length }} 次）</span>
+            <span class="collapse-arrow">{{ isCollapsed(index, 'tool') ? '▶' : '▼' }}</span>
+          </div>
+          <div v-if="!isCollapsed(index, 'tool')" class="section-body">
+            <div v-for="(tool, idx) in message.tool_info" :key="idx" class="tool-call-card">
+              <div class="tool-call-header">
+                <span class="tool-call-name">{{ tool.tool_name }}</span>
+                <span v-if="tool.is_reflection" class="reflection-badge">反思</span>
+              </div>
+              <div class="tool-call-detail">
+                <span class="detail-label">参数</span>
+                <pre class="detail-json">{{ JSON.stringify(tool.parameters, null, 2) }}</pre>
+              </div>
+              <div class="tool-call-detail">
+                <span class="detail-label">结果</span>
+                <pre class="detail-result">{{ tool.result }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 最终回答 -->
+        <div class="message-content" v-html="marked(message.content)"></div>
         
         <div v-if="message.stats" class="message-stats">
           <span>⏱️ {{ message.stats.response_time.toFixed(1) }}s</span>
@@ -445,20 +497,156 @@ watch(() => messages.value.length, scrollToBottom)
 .message-content :deep(strong) { color: var(--text-white); font-weight: 600; }
 .message-content :deep(blockquote) { border-left: 3px solid var(--accent-secondary); padding: 8px 16px; margin: 12px 0; background: rgba(139, 92, 246, 0.1); color: var(--accent-secondary); }
 
-.tool-result {
-  margin-top: 8px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.1);
+/* ---- 可折叠区域（计划 & 工具） ---- */
+.section-card {
+  margin-top: 10px;
   border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.section-header:hover {
+  background: var(--bg-hover);
+}
+
+.section-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.section-title {
+  flex: 1;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.collapse-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.section-body {
+  padding: 8px 14px 14px;
+}
+
+/* 计划步骤 */
+.plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.plan-step:last-child {
+  border-bottom: none;
+}
+
+.step-number {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.step-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* 工具调用卡片 */
+.tool-call-card {
+  margin-bottom: 10px;
+  padding: 10px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+
+.tool-call-card:last-child {
+  margin-bottom: 0;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-call-name {
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.reflection-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-warning, #f59e0b);
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.tool-call-detail {
+  margin-top: 6px;
+}
+
+.detail-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.detail-json {
+  margin: 0;
+  font-size: 11px;
   color: var(--text-secondary);
   font-family: 'SF Mono', monospace;
   white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
 }
 
-[data-theme="light"] .tool-result {
-  background: rgba(99, 102, 241, 0.05);
+.detail-result {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: 'SF Mono', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
 }
+/* ---- 可折叠区域结束 ---- */
 
 .message-stats {
   display: flex;

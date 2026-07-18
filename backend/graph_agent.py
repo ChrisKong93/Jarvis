@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import re
 import time
@@ -28,9 +29,9 @@ class AgentState(TypedDict):
     max_thinking_steps: int
     max_reflection_attempts: int
     llm_response: Dict
-    tool_call: Optional[Dict]
-    tool_result: str
-    is_error: bool
+    tool_calls: List[Dict]         # 多个并行工具调用
+    tool_results_batch: List[Dict]  # 并行执行结果
+    has_error: bool                # 是否有调用失败
 
 
 class GraphAgent:
@@ -117,7 +118,9 @@ class GraphAgent:
 
         return prompt
 
-    def _parse_tool_call(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _parse_tool_calls(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """从 LLM 响应中提取所有工具调用。"""
+        tool_calls = []
         if response.get("tool_calls"):
             for tc in response["tool_calls"]:
                 if tc.get("type") == "function":
@@ -126,23 +129,43 @@ class GraphAgent:
                         params = json.loads(func.get("arguments", "{}"))
                     except json.JSONDecodeError:
                         params = {}
-                    return {
+                    tool_calls.append({
                         "name": func.get("name"),
                         "parameters": params,
-                    }
+                    })
 
-        text = response.get("content", "")
-        pattern = r"<tool_call>(.*?)</tool_call>"
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            try:
-                tool_call = json.loads(match.group(1))
-                if isinstance(tool_call, dict) and "name" in tool_call and "parameters" in tool_call:
-                    return tool_call
-            except json.JSONDecodeError:
-                pass
+        if not tool_calls:
+            text = response.get("content", "")
+            pattern = r"<tool_call>(.*?)</tool_call>"
+            matches = re.findall(pattern, text, re.DOTALL)
+            for m in matches:
+                try:
+                    tc = json.loads(m)
+                    if isinstance(tc, dict) and "name" in tc and "parameters" in tc:
+                        tool_calls.append(tc)
+                except json.JSONDecodeError:
+                    pass
 
-        return None
+        return tool_calls
+
+    def _execute_tools_parallel(self, tool_calls: List[Dict]) -> List[Dict]:
+        """并行执行多个工具调用。"""
+        def _execute_one(tc: Dict) -> Dict:
+            name = tc["name"]
+            params = tc["parameters"]
+            result = self._execute_tool(name, params)
+            return {"tool_name": name, "parameters": params, "result": result}
+
+        if len(tool_calls) <= 1:
+            return [_execute_one(tc) for tc in tool_calls]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
+            future_to_idx = {pool.submit(_execute_one, tc): i for i, tc in enumerate(tool_calls)}
+            results = [None] * len(tool_calls)
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
+            return results
 
     def _execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> str:
         tool = tool_registry.get_tool(tool_name)
@@ -189,33 +212,33 @@ class GraphAgent:
             tools=tools_for_llm,
         )
 
-        tool_call = self._parse_tool_call(llm_response)
+        tool_calls = self._parse_tool_calls(llm_response)
         thinking_steps = state["thinking_steps"].copy()
 
-        if not tool_call and state["step_count"] == 0:
+        if not tool_calls and state["step_count"] == 0:
             guessed_tool = self._guess_tool_for_query(state["last_user_message"])
             if guessed_tool:
                 thinking_steps.append(f"模型未调用工具，自动匹配到 {guessed_tool} 工具")
                 if guessed_tool == "calculator":
                     match = re.search(r'[\d+\-*/().%\s]+', state["last_user_message"])
                     expression = match.group(0).strip() if match else state["last_user_message"]
-                    tool_call = {"name": "calculator", "parameters": {"expression": expression}}
+                    tool_calls = [{"name": "calculator", "parameters": {"expression": expression}}]
                 elif guessed_tool == "weather":
                     cities = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "重庆", "天津", "苏州", "郑州", "长沙", "东莞"]
                     city = next((c for c in cities if c in state["last_user_message"]), "北京")
-                    tool_call = {"name": "weather", "parameters": {"city": city}}
+                    tool_calls = [{"name": "weather", "parameters": {"city": city}}]
                 elif guessed_tool == "datetime":
-                    tool_call = {"name": "datetime", "parameters": {"action": "now"}}
+                    tool_calls = [{"name": "datetime", "parameters": {"action": "now"}}]
                 elif guessed_tool == "search":
-                    tool_call = {"name": "search", "parameters": {"query": state["last_user_message"]}}
+                    tool_calls = [{"name": "search", "parameters": {"query": state["last_user_message"]}}]
                 elif guessed_tool == "file":
-                    tool_call = {"name": "file", "parameters": {"action": "read", "file_path": state["last_user_message"]}}
+                    tool_calls = [{"name": "file", "parameters": {"action": "read", "file_path": state["last_user_message"]}}]
 
         return {
             **state,
             "messages": state["messages"],
             "llm_response": llm_response,
-            "tool_call": tool_call,
+            "tool_calls": tool_calls,
             "thinking_steps": thinking_steps,
             "llm_stats": {
                 "completion_tokens": state["llm_stats"]["completion_tokens"] + llm_response["completion_tokens"],
@@ -226,47 +249,48 @@ class GraphAgent:
         }
 
     def _node_parse_and_execute_tool(self, state: AgentState) -> AgentState:
-        tool_call = state.get("tool_call")
-        if not tool_call:
+        tool_calls = state.get("tool_calls")
+        if not tool_calls:
             return {
                 **state,
                 "final_response": state.get("llm_response", {}).get("content", ""),
             }
 
-        tool_name = tool_call["name"]
-        parameters = tool_call["parameters"]
-        tool_result = self._execute_tool(tool_name, parameters)
-
-        tool_info = {
-            "tool_name": tool_name,
-            "parameters": parameters,
-            "result": tool_result,
-        }
+        # 并行执行所有工具
+        results = self._execute_tools_parallel(tool_calls)
 
         new_tool_results = state["tool_results"].copy()
-        new_tool_results.append(tool_info)
+        new_tool_results.extend(results)
 
+        # 构建一个 assistant 消息（包含所有 tool_calls）
         new_messages = state["messages"].copy()
+        assistant_tc = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                },
+            }
+            for tc in tool_calls
+        ]
         new_messages.append({
             "role": "assistant",
             "content": "",
-            "tool_calls": [{
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": json.dumps(parameters, ensure_ascii=False),
-                },
-            }],
+            "tool_calls": assistant_tc,
         })
-        new_messages.append({"role": "tool", "content": tool_result})
+        for r in results:
+            new_messages.append({"role": "tool", "content": r["result"]})
+
+        has_error = any("错误" in r["result"] or "失败" in r["result"] for r in results)
 
         return {
             **state,
             "messages": new_messages,
             "tool_results": new_tool_results,
             "tool_used": True,
-            "tool_result": tool_result,
-            "is_error": "错误" in tool_result or "失败" in tool_result,
+            "tool_results_batch": results,
+            "has_error": has_error,
             "step_count": state["step_count"] + 1,
         }
 
@@ -275,10 +299,13 @@ class GraphAgent:
         new_thinking_steps = state["thinking_steps"].copy()
         new_thinking_steps.append(f"反思第{new_reflection_count}次：工具调用失败，尝试调整策略")
 
+        last_error_batch = state.get("tool_results_batch", [])
+        last_error = last_error_batch[-1]["result"] if last_error_batch else "未知错误"
+
         reflect_messages = state["messages"].copy()
         reflect_messages.append({
             "role": "assistant",
-            "content": f"反思：工具执行失败。上一步结果：{state['tool_result']}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
+            "content": f"反思：工具执行失败。上一步结果：{last_error}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
         })
 
         reflect_response = self._call_llm(
@@ -287,13 +314,13 @@ class GraphAgent:
             tools=state["tools_for_llm"],
         )
 
-        reflect_tool_call = self._parse_tool_call(reflect_response)
+        reflect_tool_calls = self._parse_tool_calls(reflect_response)
 
         return {
             **state,
             "messages": reflect_messages,
             "llm_response": reflect_response,
-            "tool_call": reflect_tool_call,
+            "tool_calls": reflect_tool_calls,
             "thinking_steps": new_thinking_steps,
             "reflection_count": new_reflection_count,
             "llm_stats": {
@@ -451,12 +478,12 @@ class GraphAgent:
             return {"has_important": False, "importance": 0, "content": ""}
 
     def _edge_decide_next(self, state: AgentState) -> str:
-        tool_call = state.get("tool_call")
+        tool_calls = state.get("tool_calls")
 
-        if not tool_call:
+        if not tool_calls:
             return "generate_final_response"
 
-        if state.get("is_error") and state["reflection_count"] < state["max_reflection_attempts"]:
+        if state.get("has_error") and state["reflection_count"] < state["max_reflection_attempts"]:
             return "reflection"
 
         return "generate_final_response"
@@ -491,6 +518,7 @@ class GraphAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         user_id: Optional[int] = None,
+        mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
 
@@ -558,6 +586,7 @@ class GraphAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         user_id: Optional[int] = None,
+        mode: Optional[str] = None,
     ) -> Generator[Dict[str, Any], None, None]:
         """流式运行 agent，逐事件产出。
 
@@ -613,10 +642,10 @@ class GraphAgent:
         llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + llm_response.get("response_time", 0)
         used_model = llm_response.get("model") or model
 
-        tool_call = self._parse_tool_call(llm_response)
+        tool_calls = self._parse_tool_calls(llm_response)
 
         # 模型没调用工具时：自动匹配
-        if not tool_call:
+        if not tool_calls:
             guessed_tool = self._guess_tool_for_query(last_user_message)
             if guessed_tool:
                 thinking_steps.append(f"模型未调用工具，自动匹配到 {guessed_tool} 工具")
@@ -624,58 +653,61 @@ class GraphAgent:
                 if guessed_tool == "calculator":
                     match = re.search(r'[\d+\-*/().%\s]+', last_user_message)
                     expression = match.group(0).strip() if match else last_user_message
-                    tool_call = {"name": "calculator", "parameters": {"expression": expression}}
+                    tool_calls = [{"name": "calculator", "parameters": {"expression": expression}}]
                 elif guessed_tool == "weather":
                     cities = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "重庆", "天津", "苏州", "郑州", "长沙", "东莞"]
                     city = next((c for c in cities if c in last_user_message), "北京")
-                    tool_call = {"name": "weather", "parameters": {"city": city}}
+                    tool_calls = [{"name": "weather", "parameters": {"city": city}}]
                 elif guessed_tool == "datetime":
-                    tool_call = {"name": "datetime", "parameters": {"action": "now"}}
+                    tool_calls = [{"name": "datetime", "parameters": {"action": "now"}}]
                 elif guessed_tool == "search":
-                    tool_call = {"name": "search", "parameters": {"query": last_user_message}}
+                    tool_calls = [{"name": "search", "parameters": {"query": last_user_message}}]
                 elif guessed_tool == "file":
-                    tool_call = {"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}
+                    tool_calls = [{"name": "file", "parameters": {"action": "read", "file_path": last_user_message}}]
 
-        # ---------- 第二阶段：执行工具（如果需要） ----------
-        if tool_call:
-            yield {"type": "tool_call", "tool_name": tool_call["name"], "parameters": tool_call["parameters"]}
+        # ---------- 第二阶段：并行执行工具 ----------
+        if tool_calls:
+            for tc in tool_calls:
+                yield {"type": "tool_call", "tool_name": tc["name"], "parameters": tc["parameters"]}
 
-            tool_result = self._execute_tool(tool_call["name"], tool_call["parameters"])
+            results = self._execute_tools_parallel(tool_calls)
             tool_used = True
 
-            tool_results.append({
-                "tool_name": tool_call["name"],
-                "parameters": tool_call["parameters"],
-                "result": tool_result,
-            })
+            for r in results:
+                tool_results.append(r)
+                yield {"type": "tool_result", "tool_name": r["tool_name"], "result": r["result"]}
 
-            yield {"type": "tool_result", "tool_name": tool_call["name"], "result": tool_result}
-
-            # 添加 tool_call / tool 消息到上下文
+            assistant_tc = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                    },
+                }
+                for tc in tool_calls
+            ]
             current_messages.append({
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{
-                    "type": "function",
-                    "function": {
-                        "name": tool_call["name"],
-                        "arguments": json.dumps(tool_call["parameters"], ensure_ascii=False),
-                    },
-                }],
+                "tool_calls": assistant_tc,
             })
-            current_messages.append({"role": "tool", "content": tool_result})
+            for r in results:
+                current_messages.append({"role": "tool", "content": r["result"]})
 
-            is_error = "错误" in tool_result or "失败" in tool_result
+            has_error = any("错误" in r["result"] or "失败" in r["result"] for r in results)
 
             # 错误时反思
-            if is_error and reflection_count < self.max_reflection_attempts:
+            if has_error and reflection_count < self.max_reflection_attempts:
                 reflection_count += 1
                 thinking_steps.append(f"反思第{reflection_count}次：工具调用失败，尝试调整策略")
                 yield {"type": "thinking", "content": thinking_steps[-1]}
 
+                last_error = next((r["result"] for r in results if "错误" in r["result"] or "失败" in r["result"]), results[-1]["result"])
+
                 reflect_messages = current_messages + [{
                     "role": "assistant",
-                    "content": f"反思：工具执行失败。上一步结果：{tool_result}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
+                    "content": f"反思：工具执行失败。上一步结果：{last_error}。请分析原因并给出调整后的方案，可以调用其他工具或直接回答。",
                 }]
 
                 try:
@@ -693,30 +725,34 @@ class GraphAgent:
                 llm_stats["llm_time"] = llm_stats.get("llm_time", 0) + reflect_response.get("response_time", 0)
                 used_model = reflect_response.get("model") or used_model
 
-                reflect_tool_call = self._parse_tool_call(reflect_response)
-                if reflect_tool_call:
-                    yield {"type": "tool_call", "tool_name": reflect_tool_call["name"], "parameters": reflect_tool_call["parameters"], "is_reflection": True}
-                    reflect_result = self._execute_tool(reflect_tool_call["name"], reflect_tool_call["parameters"])
-                    tool_results.append({
-                        "tool_name": reflect_tool_call["name"],
-                        "parameters": reflect_tool_call["parameters"],
-                        "result": reflect_result,
-                        "is_reflection": True,
-                    })
-                    yield {"type": "tool_result", "tool_name": reflect_tool_call["name"], "result": reflect_result, "is_reflection": True}
+                reflect_tool_calls = self._parse_tool_calls(reflect_response)
+                if reflect_tool_calls:
+                    for rtc in reflect_tool_calls:
+                        yield {"type": "tool_call", "tool_name": rtc["name"], "parameters": rtc["parameters"], "is_reflection": True}
 
+                    reflect_results = self._execute_tools_parallel(reflect_tool_calls)
+                    for rr in reflect_results:
+                        rr["is_reflection"] = True
+                        tool_results.append(rr)
+                        yield {"type": "tool_result", "tool_name": rr["tool_name"], "result": rr["result"], "is_reflection": True}
+
+                    reflect_assistant_tc = [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc["parameters"], ensure_ascii=False),
+                            },
+                        }
+                        for tc in reflect_tool_calls
+                    ]
                     current_messages.append({
                         "role": "assistant",
                         "content": "",
-                        "tool_calls": [{
-                            "type": "function",
-                            "function": {
-                                "name": reflect_tool_call["name"],
-                                "arguments": json.dumps(reflect_tool_call["parameters"], ensure_ascii=False),
-                            },
-                        }],
+                        "tool_calls": reflect_assistant_tc,
                     })
-                    current_messages.append({"role": "tool", "content": reflect_result})
+                    for rr in reflect_results:
+                        current_messages.append({"role": "tool", "content": rr["result"]})
                 else:
                     final_response = reflect_response["content"]
 

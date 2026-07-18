@@ -6,20 +6,26 @@
 
 ## 功能特性
 
-- 🔐 **用户系统**：支持注册、登录、退出，每个用户独立的模型配置和记忆
-- 🎯 **任务规划**：基于 ReAct 模式，将复杂任务分解为子任务，制定执行计划
+- 🔐 **用户系统**：支持注册、登录、退出，密码校验（≥8 位，含字母+数字），每个用户独立的模型配置和记忆
+- 🎯 **任务规划**：支持三种 Agent 模式
+  - **Graph Agent**（默认）：基于 LangGraph 有向图编排，节点化执行（准备 → 调用 LLM → 并行执行工具 → 反思 → 生成回答 → 更新记忆）
+  - **Plan & Execute**：先制定执行计划，再逐步执行
+  - **ReAct**：思考→行动→观察循环
 - 🔄 **反思机制**：工具调用失败时自动重试与策略调整
-- 🛠️ **工具调用**：支持计算器、搜索、天气、文件操作、日期时间等工具
+- 🛠️ **工具调用**：支持计算器、搜索、天气、文件操作、日期时间等工具，支持**并行执行**多个工具
 - 🧩 **插件系统**：工具作为插件存在，支持启用/禁用、安装/卸载管理
-- 🧠 **记忆系统**：短期记忆（对话总结）与长期记忆（重要信息持久化），基于 SQLite + ChromaDB 向量存储，LLM 自动评估重要性（阈值 ≥ 6/10）
+- 🧠 **记忆系统**：短期记忆（对话总结）与长期记忆（重要信息持久化），基于 SQLite + ChromaDB 向量存储，LLM 自动评估重要性（阈值 ≥ 6/10），embedding 模型自动后台下载
+- 🔐 **API Key 加密**：使用 Fernet (PBKDF2) 对用户 API Key 进行加密存储
+- 🔗 **MCP 协议支持**：集成 Model Context Protocol，支持 stdio 和 SSE 传输，可连接外部 MCP 服务器扩展工具能力
 - ⚡ **流式输出**：支持 SSE (Server-Sent Events) 流式输出，逐 token 渲染，工具调用过程实时可见
 - 💬 **多轮对话**：完整的上下文管理与智能截断策略
-- 📁 **会话管理**：支持创建、切换、删除多个会话，历史消息自动保存，会话列表实时刷新
+- 📁 **会话管理**：支持创建、切换、删除多个会话，自动标题预览，历史消息自动保存
 - ☁️ **多模型支持**：本地 llama.cpp + 云端 OpenAI 兼容 API，前端可自由切换
 - 🔄 **模型快捷切换**：顶部下拉框快速切换已配置的模型 Provider
 - 🗄️ **数据库存储**：模型配置、记忆、会话通过 SQLite 持久化到服务端，换浏览器不丢失
 - 🌓 **主题切换**：支持日间模式（白色背景）和夜间模式（深色背景）
 - 📊 **性能监控**：实时显示响应时间、Tokens/s、输入/输出 Tokens 等指标
+- 🚦 **频率限制**：登录/注册接口基于 slowapi 速率限制
 
 ## 支持的模型 Provider
 
@@ -38,8 +44,10 @@
 
 - **后端**：Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB（向量存储）
 - **大模型**：llama.cpp（本地）/ OpenAI 兼容 API（云端）
+- **Agent 框架**：LangGraph（Graph Agent 模式）
 - **前端**：Vue 3 + Vite + Fetch API（SSE 流式读取）
 - **认证**：JWT Token, bcrypt 密码加密
+- **安全**：Fernet (PBKDF2) API Key 加密
 - **部署**：Uvicorn
 
 ## 项目结构
@@ -47,8 +55,12 @@
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Agent 核心逻辑（含流式 run_stream）
-│   ├── graph_agent.py        # Graph Agent 逻辑（含流式 run_stream）
+│   ├── agent.py              # Agent 核心逻辑（ReAct / Plan&Execute，含流式 run_stream）
+│   ├── graph_agent.py        # Graph Agent 逻辑（基于 LangGraph，含流式 run_stream）
+│   ├── crypto_utils.py       # API Key 加密解密（Fernet + PBKDF2）
+│   ├── auth.py               # 用户认证（JWT、密码哈希）
+│   ├── database.py           # 数据库模型（User、ModelConfig、ShortTermMemory、LongTermMemory、Plugin、ChatSession）
+│   ├── plugin_manager.py     # 插件管理器（安装/卸载/启停）
 │   ├── providers/            # 多模型 Provider 抽象
 │   │   ├── registry.py       # Provider 注册表（含硬编码默认配置）
 │   │   ├── client.py         # 统一 LLM 客户端（含流式 chat_completion_stream）
@@ -57,26 +69,28 @@ Jarvis/
 │   │   ├── __init__.py       # MemoryManager
 │   │   ├── short_term.py     # 短期记忆（SQLite）
 │   │   ├── long_term.py      # 长期记忆（SQLite + ChromaDB 向量检索）
+│   │   ├── embeddings.py     # Embedding 生成（sentence-transformers，带 fallback 伪向量）
 │   │   └── vector_store.py   # ChromaDB 向量存储封装
 │   ├── tools/                # 工具集（默认插件）
-│   │   ├── base.py
+│   │   ├── base.py           # 工具注册表（含 MCP 工具注册）
 │   │   ├── calculator.py
 │   │   ├── datetime_tool.py
 │   │   ├── file_tool.py
 │   │   ├── search.py
 │   │   └── weather.py
-│   ├── database.py            # 数据库模型（User、ModelConfig、ShortTermMemory、LongTermMemory、Plugin）
-│   ├── auth.py                # 用户认证（JWT、密码哈希）
-│   ├── plugin_manager.py      # 插件管理器（安装/卸载/启停）
-│   └── __init__.py
+│   └── mcp/                  # MCP (Model Context Protocol) 集成
+│       ├── __init__.py
+│       ├── manager.py        # MCP 服务器管理器（JSON-RPC 2.0，支持 stdio/SSE）
+│       └── adapter.py        # MCP 工具适配器
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ChatPanel.vue      # 聊天面板（含 SSE 流式读取）
-│   │   │   ├── SidebarLeft.vue    # 左侧导航栏（会话列表+导航）
+│   │   │   ├── SidebarLeft.vue    # 左侧导航栏（会话列表+导航，含 MCP 导航）
 │   │   │   ├── SidebarRight.vue   # 右侧记忆+性能面板
 │   │   │   ├── LoginPage.vue      # 登录/注册页面
 │   │   │   ├── PluginPage.vue     # 插件管理页面
+│   │   │   ├── MCPServerPage.vue  # MCP 服务器管理页面
 │   │   │   └── SettingsPage.vue   # 设置页面
 │   │   ├── App.vue                # 主应用组件
 │   │   ├── main.js                # 入口文件
@@ -88,9 +102,10 @@ Jarvis/
 ├── data/                     # 运行时数据
 │   ├── jarvis.db             # SQLite 数据库
 │   └── vectors/              # ChromaDB 向量存储
+├── mcp_servers.json          # MCP 服务器配置文件（可选）
 ├── main.py                 # FastAPI 主应用（API 路由）
-├── session_manager.py      # 会话管理
-├── context_manager.py      # 上下文管理
+├── session_manager.py      # 会话管理（SQLite 持久化）
+├── context_manager.py      # 上下文管理与 Token 截断
 ├── requirements.txt
 ├── README.md
 └── README_EN.md
@@ -132,9 +147,9 @@ venv/bin/python main.py
 
 访问 `http://localhost:8000`：
 
-1. **注册账号** → 首次使用先注册
+1. **注册账号** → 首次使用先注册（密码 ≥ 8 位，需包含字母和数字）
 2. **登录系统** → 使用注册的账号登录
-3. **配置模型** → 左侧栏 ⚙️ 设置中配置 Provider、API Key
+3. **配置模型** → 左侧栏 ⚙️ 设置中配置 Provider、API Key（Key 加密存储）
 4. **开始对话** → 在聊天面板输入消息，支持流式输出
 
 ## 用户系统
@@ -143,13 +158,25 @@ Jarvis 内置了用户认证系统：
 
 | 功能 | 说明 |
 |------|------|
-| 注册 | 填写用户名和密码即可注册 |
-| 登录 | JWT Token 认证，有效期 30 天 |
+| 注册 | 填写用户名、邮箱和密码注册（密码 ≥ 8 位，含字母+数字） |
+| 登录 | JWT Token 认证，有效期 30 天；接口有速率限制 |
 | 退出 | 清除 Token，返回登录页面 |
-| 模型配置 | 每个用户独立管理自己的模型配置 |
+| 模型配置 | 每个用户独立管理自己的模型配置（API Key 加密存储） |
 | 记忆隔离 | 每个用户拥有独立的短期/长期记忆 |
 
 > 所有用户数据（密码哈希、模型配置、记忆）存储在服务端 SQLite 数据库中，换浏览器或清除缓存不会丢失。
+
+## Agent 模式
+
+Jarvis 支持三种 Agent 模式，可在设置页面或请求参数中选择：
+
+| 模式 | 说明 |
+|------|------|
+| `graph`（默认） | 基于 LangGraph 有向图编排，节点化执行流程：准备状态 → 调用 LLM → 并行执行工具 → 反思纠错 → 生成回答 → 更新记忆。支持工具并行调用 |
+| `plan_execute` | 先由 LLM 分析任务并制定执行计划，再按计划逐步执行工具 |
+| `react` | 经典的 ReAct（思考→行动→观察）循环模式 |
+
+> 默认模式可通过环境变量 `DEFAULT_AGENT_MODE` 配置。
 
 ## 插件系统
 
@@ -184,6 +211,57 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 | `/api/plugins` | POST | 安装新插件 |
 | `/api/plugins/{id}` | DELETE | 卸载插件 |
 
+## MCP（Model Context Protocol）集成
+
+Jarvis 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)，可连接外部 MCP 服务器扩展工具能力。
+
+### 传输类型
+
+| 类型 | 说明 |
+|------|------|
+| `stdio` | 通过子进程 stdin/stdout 通信（本地命令启动） |
+| `sse` | 通过 HTTP POST + SSE 通信（远程服务） |
+
+### 配置方式
+
+在项目根目录创建 `mcp_servers.json` 文件：
+
+```json
+{
+  "servers": [
+    {
+      "name": "my-server",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["path/to/server.js"],
+      "env": {"API_KEY": "xxx"}
+    },
+    {
+      "name": "remote-server",
+      "transport": "sse",
+      "url": "http://localhost:3000/mcp"
+    }
+  ]
+}
+```
+
+MCP 配置路径可通过环境变量 `MCP_CONFIG_PATH` 自定义。
+
+### MCP 管理页面
+
+左侧栏导航 → 🔗 MCP 服务器，可查看已连接的 MCP 服务器列表及其工具。
+
+### MCP 管理 API
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/mcp/servers` | GET | 获取所有 MCP 服务器连接状态 |
+| `/api/mcp/tools` | GET | 获取所有 MCP 工具列表 |
+| `/api/mcp/servers/reload` | POST | 重新加载 MCP 配置并重连所有服务器 |
+| `/api/mcp/servers/{name}/reconnect` | POST | 重连指定的 MCP 服务器 |
+| `/api/mcp/servers/{name}` | PUT | 更新 MCP 服务器配置 |
+| `/api/mcp/servers/{name}` | DELETE | 删除 MCP 服务器配置 |
+
 ## 模型管理
 
 ### 模型快捷切换（顶部）
@@ -195,9 +273,9 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 在左侧栏设置页面中可以：
 
 - **选择 Provider**：从可用 Provider 列表中选择
-- **配置 API Key / Base URL**：填写服务端连接信息
+- **配置 API Key / Base URL**：填写服务端连接信息（API Key 加密存储）
 - **选择模型**：从 Provider 支持的模型列表中选择（支持动态获取官网模型列表）
-- **配置最大 Token 数**、Agent 模式等
+- **配置最大 Token 数**、Agent 模式（graph / plan_execute / react）
 - 已配置的 Provider 显示 ✓ 和「已配置」标签
 
 ### 配置流程
@@ -207,7 +285,7 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
     ↓
 左侧栏 ⚙️ 设置 → 选择 Provider（如 DeepSeek）
     ↓
-填写 API Key → 选择模型 → 点击保存
+填写 API Key → 选择模型 → 点击保存（Key 加密存储）
     ↓
 配置持久化到 SQLite 数据库
     ↓
@@ -228,6 +306,7 @@ Jarvis 的插件系统将工具以插件形式管理，支持启用/禁用、安
 - 对话过程中 Agent 自动生成短期总结
 - 每次对话完成后，LLM 分析对话内容并评分（1-10 分）
 - 重要性 ≥ 6 的信息自动提取为长期记忆，存入 SQLite + ChromaDB
+- embedding 模型（默认 all-MiniLM-L6-v2）后台自动下载，不可用时自动降级为伪向量模式
 - 每次对话前自动检索相关记忆（向量相似度检索）作为上下文
 - 右侧面板可查看和管理所有记忆
 
@@ -243,13 +322,14 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 
 ### 左侧栏
 - **头部**：Jarvis Logo + AI Assistant 标识
-- **导航**：💬 对话 / 🧩 插件 / ⚙️ 设置（垂直排列）
+- **导航**：💬 对话 / 🧩 插件 / 🔗 MCP 服务器 / ⚙️ 设置（垂直排列）
 - **聊天页面**：会话列表 + 操作按钮（新建/保存/清空）
-- **插件/设置页面**：空白区域
+- **插件/MCP/设置页面**：空白区域
 
 ### 中间区域
 - **对话页面**：ChatPanel 聊天界面
 - **插件页面**：PluginPage 插件管理界面
+- **MCP 页面**：MCPServerPage MCP 管理界面
 - **设置页面**：SettingsPage 模型配置界面
 
 ### 右侧栏（仅聊天页面）
@@ -262,8 +342,8 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/register` | POST | 用户注册 |
-| `/api/auth/login` | POST | 用户登录（返回 JWT Token） |
+| `/api/auth/register` | POST | 用户注册（密码 ≥ 8 位，含字母+数字；5 次/分钟限流） |
+| `/api/auth/login` | POST | 用户登录（返回 JWT Token；10 次/分钟限流） |
 | `/api/auth/logout` | POST | 用户退出 |
 | `/api/auth/me` | GET | 获取当前用户信息 |
 
@@ -273,7 +353,7 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 |------|------|------|
 | `/api/providers` | GET | 获取可用 Provider 列表 |
 | `/api/user/config` | GET | 获取当前用户的模型配置列表 |
-| `/api/user/config` | POST | 保存当前用户的模型配置 |
+| `/api/user/config` | POST | 保存当前用户的模型配置（含 agent_mode） |
 | `/api/user/config/{id}` | DELETE | 删除指定模型配置 |
 | `/api/models` | GET | 获取指定 Provider 的模型列表 |
 
@@ -292,7 +372,7 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/session` | POST | 创建会话 |
-| `/api/sessions` | GET | 获取会话列表 |
+| `/api/sessions` | GET | 获取会话列表（含标题/预览） |
 | `/api/session/{id}` | GET | 获取会话详情 |
 | `/api/session/{id}` | DELETE | 删除会话 |
 
@@ -302,10 +382,22 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 |------|------|------|
 | `/api/tools` | GET | 获取工具列表 |
 | `/api/memory` | GET | 获取当前用户的长期记忆 |
+| `/api/memory` | POST | 手动添加长期记忆 |
 | `/api/memory/stats` | GET | 获取记忆统计（短期/长期数量、总 tokens） |
 | `/api/memory` | DELETE | 清空当前用户的所有记忆（含短期+长期+向量） |
 | `/api/memory/{memory_id}` | DELETE | 删除指定长期记忆 |
 | `/api/memory/search` | GET | 语义搜索长期记忆 |
+
+### MCP 管理接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/mcp/servers` | GET | 获取所有 MCP 服务器连接状态 |
+| `/api/mcp/tools` | GET | 获取所有 MCP 工具列表 |
+| `/api/mcp/servers/reload` | POST | 重新加载 MCP 配置并重连 |
+| `/api/mcp/servers/{name}/reconnect` | POST | 重连指定 MCP 服务器 |
+| `/api/mcp/servers/{name}` | PUT | 更新 MCP 服务器配置 |
+| `/api/mcp/servers/{name}` | DELETE | 删除 MCP 服务器 |
 
 ### 请求参数（stream 端点）
 
@@ -315,7 +407,8 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
   "session_id": "your-session-id",
   "max_tokens": 2048,
   "provider": "deepseek",
-  "model": "deepseek-chat"
+  "model": "deepseek-chat",
+  "agent_mode": "graph"
 }
 ```
 
@@ -330,6 +423,18 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 | `weather` | 城市天气查询 |
 | `file` | 文件读写操作 |
 | `datetime` | 日期时间与定时器 |
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DEFAULT_PROVIDER` | `llama_cpp` | 默认模型 Provider |
+| `DEFAULT_AGENT_MODE` | `plan_execute` | 默认 Agent 模式（graph / plan_execute / react） |
+| `PORT` | `8000` | 服务端口 |
+| `SECRET_KEY` | `jarvis-secret-key-change-in-production` | API Key 加密密钥（生产环境请修改） |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding 模型名称 |
+| `MCP_CONFIG_PATH` | `./mcp_servers.json` | MCP 服务器配置文件路径 |
+| `MCP_CONNECT_TIMEOUT` | `60` | MCP 服务器连接超时（秒） |
 
 ## 开发模式
 
