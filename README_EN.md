@@ -7,10 +7,10 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 ## Features
 
 - 🔐 **User System**: Register, login, logout with password validation (≥8 chars, letter + digit required), per-user independent model configuration and memory
-- 🎯 **Task Planning**: Three Agent modes supported
-  - **Graph Agent** (default): LangGraph-based directed graph orchestration with node-based execution (prepare → call LLM → parallel tool execution → reflection → generate response → update memory)
-  - **Plan & Execute**: Analyze and plan first, then execute tools step by step
-  - **ReAct**: Think → Act → Observe loop
+- 🎯 **Task Planning**: Three Agent modes, all powered by LangGraph directed graph orchestration
+  - **Plan & Execute** (default): LLM analyzes tasks and creates an execution plan with parallel groups, then executes group by group
+  - **ReAct**: Classic Think → Act → Observe loop with tool calling, error reflection and retry
+  - **Chat**: Pure conversation mode, suitable for daily chat without tool calling
 - 🔄 **Reflection Mechanism**: Automatically retries and adjusts strategies when tool calls fail
 - 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools with **parallel execution**
 - 🧩 **Plugin System**: Tools managed as plugins with enable/disable, install/uninstall capabilities
@@ -44,7 +44,7 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 
 - **Backend**: Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB (vector storage)
 - **LLMs**: llama.cpp (local) / OpenAI-compatible APIs (cloud)
-- **Agent Framework**: LangGraph (Graph Agent mode)
+- **Agent Framework**: LangGraph (finite-state machine graph orchestration)
 - **Frontend**: Vue 3 + Vite + Fetch API (SSE streaming)
 - **Auth**: JWT Token, bcrypt password hashing
 - **Security**: Fernet (PBKDF2) API Key encryption
@@ -55,8 +55,7 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Core Agent logic (ReAct / Plan&Execute, with streaming run_stream)
-│   ├── graph_agent.py        # Graph Agent logic (LangGraph-based, with streaming run_stream)
+│   ├── graph_agent.py        # Core Agent logic (LangGraph-based, supports chat / ReAct / Plan&Execute, with streaming run_stream)
 │   ├── crypto_utils.py       # API Key encryption/decryption (Fernet + PBKDF2)
 │   ├── auth.py               # User authentication (JWT, password hashing)
 │   ├── database.py           # Database models (User, ModelConfig, ShortTermMemory, LongTermMemory, Plugin, ChatSession)
@@ -172,9 +171,9 @@ Jarvis supports three Agent modes, selectable in settings page or request parame
 
 | Mode | Description |
 |------|-------------|
-| `graph` (default) | LangGraph-based directed graph orchestration: prepare state → call LLM → parallel tool execution → reflect → generate response → update memory. Supports parallel tool calls |
-| `plan_execute` | LLM analyzes task and creates an execution plan, then executes tools step by step |
-| `react` | Classic ReAct (Think → Act → Observe) loop |
+| `plan_execute` (default) | LangGraph-based. LLM analyzes task and creates a plan with parallel groups, then executes group by group (parallel/serial). Supports parallel tool calls and reflection |
+| `react` | LangGraph-based. Classic ReAct (Think → Act → Observe) loop with tool guessing, parallel execution, error reflection and retry |
+| `chat` | LangGraph-based. Pure conversation mode, suitable for daily chat without tool calling. Flow: LLM call → memory update |
 
 > Default mode configurable via `DEFAULT_AGENT_MODE` environment variable.
 
@@ -275,7 +274,7 @@ In left sidebar settings page you can:
 - **Select Provider**: Choose from available Provider list
 - **Configure API Key / Base URL**: Fill server connection info (API Key encrypted)
 - **Select Model**: Choose from Provider's supported model list (supports dynamic fetching)
-- **Configure Max Tokens**, Agent mode (graph / plan_execute / react)
+- **Configure Max Tokens**, Agent mode (plan_execute / react / chat)
 - Configured Providers show ✓ and "Configured" label
 
 ### Configuration Flow
@@ -429,7 +428,7 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEFAULT_PROVIDER` | `llama_cpp` | Default model Provider |
-| `DEFAULT_AGENT_MODE` | `plan_execute` | Default Agent mode (graph / plan_execute / react) |
+| `DEFAULT_AGENT_MODE` | `plan_execute` | Default Agent mode (plan_execute / react / chat) |
 | `PORT` | `8000` | Service port |
 | `SECRET_KEY` | `jarvis-secret-key-change-in-production` | API Key encryption key (change in production) |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model name |

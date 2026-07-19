@@ -19,7 +19,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from backend.agent import Agent
 from backend.auth import (
     authenticate_user,
     create_access_token,
@@ -39,6 +38,12 @@ from context_manager import calculate_messages_tokens, truncate_messages
 from session_manager import session_manager
 
 load_dotenv()
+
+# SECRET_KEY 安全检查（用于 API Key 加密）
+DEFAULT_SECRET_KEY = "jarvis-secret-key-change-in-production"
+SECRET_KEY = os.environ.get("SECRET_KEY", DEFAULT_SECRET_KEY)
+if SECRET_KEY == DEFAULT_SECRET_KEY:
+    logger.warning("⚠️ SECURITY: SECRET_KEY 使用默认值！请设置环境变量 SECRET_KEY 以保护 API Key 加密安全。")
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
@@ -65,8 +70,15 @@ def _validate_password(password: str) -> Optional[str]:
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "llama_cpp")
 DEFAULT_AGENT_MODE = os.environ.get("DEFAULT_AGENT_MODE", "plan_execute")
 
-agent = Agent()
-graph_agent = GraphAgent()
+# 前端 agent_mode → GraphAgent mode 映射
+AGENT_MODE_MAPPING = {
+    "graph": DEFAULT_AGENT_MODE,
+    "chat": "chat",
+    "react": "react",
+    "plan_execute": "plan_execute",
+}
+
+agent = GraphAgent()
 
 init_db()
 seed_default_plugins()
@@ -150,6 +162,25 @@ def _extract_llm_options(data: Dict[str, Any], user_id: Optional[int] = None, db
                 options["model"] = config.default_model
 
     return options
+
+
+def _resolve_session(data: Dict) -> tuple:
+    """获取或创建会话，合并已有消息。返回 (session_id, session, merged_messages)。"""
+    session_id = data.get("session_id")
+    if not session_id:
+        session_id = session_manager.create_session()
+    else:
+        if session_manager.get_session(session_id) is None:
+            session_manager.create_session(session_id)
+
+    session = session_manager.get_session(session_id)
+    messages = data.get("messages", [])
+    if session:
+        existing = session.messages.copy()
+        if existing:
+            messages = existing + messages
+        session_manager.update_session_messages(session_id, messages)
+    return session_id, session, messages
 
 
 @app.get("/")
@@ -464,39 +495,14 @@ async def agent_chat(request: Request, user: Dict = Depends(get_current_user), d
     data = await request.json()
     llm_opts = _extract_llm_options(data, user["id"] if user else None, db)
 
-    messages = data.get("messages", [])
     max_tokens = data.get("max_tokens", 2048)
     agent_mode = data.get("agent_mode", DEFAULT_AGENT_MODE)
-    session_id = data.get("session_id")
-
-    if not session_id:
-        session_id = session_manager.create_session()
-    else:
-        if session_manager.get_session(session_id) is None:
-            session_manager.create_session(session_id)
-
-    session = session_manager.get_session(session_id)
-    if session:
-        existing_messages = session.messages.copy()
-
-        if existing_messages:
-            messages = existing_messages + messages
-
-        session_manager.update_session_messages(session_id, messages)
-
-    if agent_mode == "graph":
-        current_agent = graph_agent
-        current_agent_mode = None
-    elif agent_mode == "plan_execute":
-        current_agent = agent
-        current_agent_mode = "plan_execute"
-    else:
-        current_agent = agent
-        current_agent_mode = "react"
+    current_agent_mode = AGENT_MODE_MAPPING.get(agent_mode, DEFAULT_AGENT_MODE)
+    session_id, session, messages = _resolve_session(data)
 
     try:
         result = await asyncio.to_thread(
-            current_agent.run,
+            agent.run,
             messages,
             max_tokens=max_tokens,
             provider=llm_opts["provider"],
@@ -531,34 +537,11 @@ async def agent_chat_stream(request: Request, user: Dict = Depends(get_current_u
     data = await request.json()
     llm_opts = _extract_llm_options(data, user["id"] if user else None, db)
 
-    messages = data.get("messages", [])
     max_tokens = data.get("max_tokens", 2048)
     agent_mode = data.get("agent_mode", DEFAULT_AGENT_MODE)
-    session_id = data.get("session_id")
-
-    if not session_id:
-        session_id = session_manager.create_session()
-    else:
-        if session_manager.get_session(session_id) is None:
-            session_manager.create_session(session_id)
-
-    session = session_manager.get_session(session_id)
-    if session:
-        existing_messages = session.messages.copy()
-        if existing_messages:
-            messages = existing_messages + messages
-        session_manager.update_session_messages(session_id, messages)
-
-    if agent_mode == "graph":
-        current_agent = graph_agent
-        current_agent_mode = None
-    elif agent_mode == "plan_execute":
-        current_agent = agent
-        current_agent_mode = "plan_execute"
-    else:
-        current_agent = agent
-        current_agent_mode = "react"
-    run_fn = current_agent.run_stream
+    current_agent_mode = AGENT_MODE_MAPPING.get(agent_mode, DEFAULT_AGENT_MODE)
+    session_id, session, messages = _resolve_session(data)
+    run_fn = agent.run_stream
 
     async def event_generator():
         full_content = ""

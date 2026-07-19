@@ -7,10 +7,10 @@
 ## 功能特性
 
 - 🔐 **用户系统**：支持注册、登录、退出，密码校验（≥8 位，含字母+数字），每个用户独立的模型配置和记忆
-- 🎯 **任务规划**：支持三种 Agent 模式
-  - **Graph Agent**（默认）：基于 LangGraph 有向图编排，节点化执行（准备 → 调用 LLM → 并行执行工具 → 反思 → 生成回答 → 更新记忆）
-  - **Plan & Execute**：先制定执行计划，再逐步执行
-  - **ReAct**：思考→行动→观察循环
+- 🎯 **任务规划**：支持三种 Agent 模式，全部基于 LangGraph 有向图编排
+  - **Plan & Execute**（默认）：先由 LLM 制定执行计划，再按并行分组逐步执行
+  - **ReAct**：经典的思考→行动→观察循环，支持工具调用、错误反思与重试
+  - **Chat**：纯对话模式，适用于不需要工具调用的日常聊天
 - 🔄 **反思机制**：工具调用失败时自动重试与策略调整
 - 🛠️ **工具调用**：支持计算器、搜索、天气、文件操作、日期时间等工具，支持**并行执行**多个工具
 - 🧩 **插件系统**：工具作为插件存在，支持启用/禁用、安装/卸载管理
@@ -44,7 +44,7 @@
 
 - **后端**：Python 3.9+, FastAPI, SQLAlchemy, SQLite, ChromaDB（向量存储）
 - **大模型**：llama.cpp（本地）/ OpenAI 兼容 API（云端）
-- **Agent 框架**：LangGraph（Graph Agent 模式）
+- **Agent 框架**：LangGraph（有穷状态机图编排）
 - **前端**：Vue 3 + Vite + Fetch API（SSE 流式读取）
 - **认证**：JWT Token, bcrypt 密码加密
 - **安全**：Fernet (PBKDF2) API Key 加密
@@ -55,8 +55,7 @@
 ```
 Jarvis/
 ├── backend/
-│   ├── agent.py              # Agent 核心逻辑（ReAct / Plan&Execute，含流式 run_stream）
-│   ├── graph_agent.py        # Graph Agent 逻辑（基于 LangGraph，含流式 run_stream）
+│   ├── graph_agent.py        # Agent 核心逻辑（基于 LangGraph，支持 chat / ReAct / Plan&Execute，含流式 run_stream）
 │   ├── crypto_utils.py       # API Key 加密解密（Fernet + PBKDF2）
 │   ├── auth.py               # 用户认证（JWT、密码哈希）
 │   ├── database.py           # 数据库模型（User、ModelConfig、ShortTermMemory、LongTermMemory、Plugin、ChatSession）
@@ -172,9 +171,9 @@ Jarvis 支持三种 Agent 模式，可在设置页面或请求参数中选择：
 
 | 模式 | 说明 |
 |------|------|
-| `graph`（默认） | 基于 LangGraph 有向图编排，节点化执行流程：准备状态 → 调用 LLM → 并行执行工具 → 反思纠错 → 生成回答 → 更新记忆。支持工具并行调用 |
-| `plan_execute` | 先由 LLM 分析任务并制定执行计划，再按计划逐步执行工具 |
-| `react` | 经典的 ReAct（思考→行动→观察）循环模式 |
+| `plan_execute`（默认） | 基于 LangGraph，LLM 分析任务并制定包含并行分组的执行计划，再按组并行/串行执行。支持工具并行调用与反思 |
+| `react` | 基于 LangGraph，经典的 ReAct（思考→行动→观察）循环模式，支持工具猜测、并行执行、错误反思与重试 |
+| `chat` | 基于 LangGraph，纯对话模式，适用于不需要工具调用的日常聊天。流程：LLM 调用 → 记忆更新 |
 
 > 默认模式可通过环境变量 `DEFAULT_AGENT_MODE` 配置。
 
@@ -275,7 +274,7 @@ MCP 配置路径可通过环境变量 `MCP_CONFIG_PATH` 自定义。
 - **选择 Provider**：从可用 Provider 列表中选择
 - **配置 API Key / Base URL**：填写服务端连接信息（API Key 加密存储）
 - **选择模型**：从 Provider 支持的模型列表中选择（支持动态获取官网模型列表）
-- **配置最大 Token 数**、Agent 模式（graph / plan_execute / react）
+- **配置最大 Token 数**、Agent 模式（plan_execute / react / chat）
 - 已配置的 Provider 显示 ✓ 和「已配置」标签
 
 ### 配置流程
@@ -429,7 +428,7 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DEFAULT_PROVIDER` | `llama_cpp` | 默认模型 Provider |
-| `DEFAULT_AGENT_MODE` | `plan_execute` | 默认 Agent 模式（graph / plan_execute / react） |
+| `DEFAULT_AGENT_MODE` | `plan_execute` | 默认 Agent 模式（plan_execute / react / chat） |
 | `PORT` | `8000` | 服务端口 |
 | `SECRET_KEY` | `jarvis-secret-key-change-in-production` | API Key 加密密钥（生产环境请修改） |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding 模型名称 |

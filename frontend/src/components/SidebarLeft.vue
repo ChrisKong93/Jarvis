@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, inject } from 'vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -28,6 +28,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['new-session', 'clear-messages', 'switch-session', 'delete-session', 'active-page-change'])
+
+const addToast = inject('addToast', () => {})
 
 const sessions = ref([])
 const activeNav = ref(props.activePage)
@@ -68,7 +70,7 @@ const handleNewSession = async () => {
     emit('clear-messages')
   } catch (e) {
     console.error('创建会话失败:', e)
-    alert('创建会话失败')
+    addToast('创建会话失败', 'error')
   }
 }
 
@@ -86,13 +88,13 @@ const handleSaveRecord = async () => {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      alert('聊天记录已保存')
+      addToast('聊天记录已保存', 'success')
     } else {
-      alert('暂无聊天记录')
+      addToast('暂无聊天记录', 'warning')
     }
   } catch (e) {
     console.error('保存记录失败:', e)
-    alert('保存记录失败')
+    addToast('保存记录失败', 'error')
   }
 }
 
@@ -100,10 +102,10 @@ const handleClearMemory = async () => {
   if (confirm('确定要清空所有记忆吗？')) {
     try {
       await axios.delete('/api/memory')
-      alert('记忆已清空')
+      addToast('记忆已清空', 'success')
     } catch (e) {
       console.error('清空记忆失败:', e)
-      alert('清空记忆失败')
+      addToast('清空记忆失败', 'error')
     }
   }
 }
@@ -112,14 +114,15 @@ const handleSwitchSession = (sessionId) => {
   emit('switch-session', sessionId)
 }
 
-const handleDeleteSession = (sessionId) => {
-  if (confirm('确定要删除这个会话吗？')) {
-    axios.delete(`/api/session/${sessionId}`).then(() => {
-      loadSessions()
-      emit('delete-session', sessionId)
-    }).catch(e => {
-      console.error('删除会话失败:', e)
-    })
+const handleDeleteSession = async (sessionId) => {
+  if (!confirm('确定要删除这个会话吗？')) return
+  try {
+    await axios.delete(`/api/session/${sessionId}`)
+    await loadSessions()
+    emit('delete-session', sessionId)
+  } catch (e) {
+    console.error('删除会话失败:', e)
+    addToast('删除会话失败', 'error')
   }
 }
 
@@ -364,15 +367,6 @@ const formatTime = (isoString) => {
   font-size: 12px;
   padding: 12px 0;
   transition: color 0.3s ease;
-}
-
-.nav-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .stat-item {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, computed, provide } from 'vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import MCPServerPage from '@/components/MCPServerPage.vue'
 import SidebarLeft from '@/components/SidebarLeft.vue'
@@ -7,7 +7,29 @@ import SidebarRight from '@/components/SidebarRight.vue'
 import LoginPage from '@/components/LoginPage.vue'
 import PluginPage from '@/components/PluginPage.vue'
 import SettingsPage from '@/components/SettingsPage.vue'
+import ToastNotification from '@/components/ToastNotification.vue'
 import axios from 'axios'
+
+// ---- Toast 通知系统 ----
+const toasts = ref([])
+let toastId = 0
+
+const addToast = (message, type = 'error', duration = 5000) => {
+  const id = ++toastId
+  toasts.value.push({ id, message, type })
+  if (duration > 0) {
+    setTimeout(() => {
+      toasts.value = toasts.value.filter(t => t.id !== id)
+    }, duration)
+  }
+}
+
+const removeToast = (id) => {
+  toasts.value = toasts.value.filter(t => t.id !== id)
+}
+
+// 全局 provide，子组件可通过 inject('addToast') 使用
+provide('addToast', addToast)
 
 const activePage = ref('chat')
 const currentMode = ref('agent')
@@ -55,6 +77,7 @@ const loadUserConfigs = async () => {
     userConfigs.value = res.data.configs || []
   } catch (e) {
     console.error('加载用户配置失败:', e)
+    addToast('加载用户配置失败: ' + (e.response?.data?.error || e.message), 'error')
   }
 }
 
@@ -100,6 +123,7 @@ const loadSettingsFromServer = async () => {
     }
   } catch (e) {
     console.error('从服务器加载设置失败:', e)
+    addToast('加载设置失败: ' + (e.response?.data?.error || e.message), 'error')
   }
 }
 
@@ -124,6 +148,7 @@ const handleLoginSuccess = async (data) => {
   currentUser.value = {
     username: data.username
   }
+  addToast('登录成功', 'success')
   await initSession()
   await loadSettingsFromServer()
 }
@@ -175,6 +200,7 @@ const handleDeleteSession = async (deletedSessionId) => {
       sessionReloadKey.value++
     } catch (e) {
       console.error('创建新会话失败:', e)
+      addToast('创建新会话失败: ' + (e.response?.data?.error || e.message), 'error')
     }
   }
 }
@@ -236,8 +262,10 @@ const saveSettingsToServer = async (settings) => {
       max_tokens: settings.max_tokens,
       agent_mode: settings.agent_mode
     })
+    addToast('设置已保存', 'success')
   } catch (e) {
     console.error('保存设置到服务器失败:', e)
+    addToast('保存设置失败: ' + (e.response?.data?.error || e.message), 'error')
   }
 }
 
@@ -253,6 +281,7 @@ const initSession = async () => {
       sessionReloadKey.value++
     } catch (e) {
       console.error('初始化会话失败:', e)
+      addToast('初始化会话失败: ' + (e.response?.data?.error || e.message), 'error')
     }
   }
 }
@@ -276,6 +305,8 @@ watch(sessionId, (newSessionId) => {
 </script>
 
 <template>
+  <ToastNotification :toasts="toasts" @remove="removeToast" />
+  
   <div v-if="!isLoggedIn" class="login-wrapper">
     <LoginPage @login-success="handleLoginSuccess" />
   </div>

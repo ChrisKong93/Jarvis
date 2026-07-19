@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, nextTick, onMounted, watch } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import axios from 'axios'
 
 marked.setOptions({
@@ -330,7 +331,7 @@ watch(() => messages.value.length, scrollToBottom)
         </div>
 
         <!-- 最终回答 -->
-        <div class="message-content" v-html="marked(message.content)"></div>
+        <div class="message-content" v-html="DOMPurify.sanitize(marked(message.content))"></div>
         
         <div v-if="message.stats" class="message-stats">
           <span>⏱️ {{ message.stats.response_time.toFixed(1) }}s</span>
