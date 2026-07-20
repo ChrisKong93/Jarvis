@@ -2,9 +2,7 @@ import asyncio
 import json
 import logging
 import os
-import re
 import threading
-from datetime import timedelta
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
@@ -20,9 +18,6 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from backend.auth import (
-    authenticate_user,
-    create_access_token,
-    create_user,
     decode_access_token,
     get_user,
 )
@@ -30,7 +25,6 @@ from backend.crypto_utils import encrypt_api_key, decrypt_api_key
 from backend.database import ModelConfig, init_db, get_db
 from backend.graph_agent import GraphAgent
 from backend.mcp import mcp_manager
-from backend.memory import memory_manager
 from backend.plugin_manager import seed_default_plugins, get_all_plugins, get_enabled_plugins, toggle_plugin, remove_plugin, install_plugin
 from backend.providers import LLMError, list_providers, llm_client
 from backend.tools.base import tool_registry
@@ -53,18 +47,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 dist_dir = os.path.join(os.path.dirname(__file__), "dist")
 if os.path.exists(dist_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(dist_dir, "assets")), name="assets")
-
-MIN_PASSWORD_LENGTH = 8
-
-
-def _validate_password(password: str) -> Optional[str]:
-    if len(password) < MIN_PASSWORD_LENGTH:
-        return f"密码长度不能少于 {MIN_PASSWORD_LENGTH} 位"
-    if not re.search(r"[A-Za-z]", password):
-        return "密码必须包含至少一个字母"
-    if not re.search(r"\d", password):
-        return "密码必须包含至少一个数字"
-    return None
 
 
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "llama_cpp")
@@ -183,6 +165,16 @@ def _resolve_session(data: Dict) -> tuple:
     return session_id, session, messages
 
 
+# ---------------------------------------------------------------------------
+# Register extracted route modules
+# ---------------------------------------------------------------------------
+from backend.routes.auth import register_auth_routes
+from backend.routes.memory import register_memory_routes
+
+register_auth_routes(app, limiter, get_current_user)
+register_memory_routes(app, get_current_user)
+
+
 @app.get("/")
 async def index(request: Request):
     dist_index = os.path.join(dist_dir, "index.html")
@@ -196,83 +188,6 @@ async def index(request: Request):
             content = f.read()
         return HTMLResponse(content, media_type="text/html")
     return HTMLResponse(content="<h1>Jarvis AI Assistant</h1><p>前端文件未找到，请先构建前端项目。</p>", media_type="text/html")
-
-
-@app.post("/api/auth/register")
-@limiter.limit("5/minute")
-async def register(request: Request, db: Session = Depends(get_db)):
-    data = await request.json()
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
-
-    if not username or not email or not password:
-        return {"error": "用户名、邮箱和密码不能为空"}, 400
-
-    username = username.strip()
-    email = email.strip()
-
-    if len(username) < 2:
-        return {"error": "用户名至少 2 个字符"}, 400
-
-    if not re.match(r"^[a-zA-Z0-9_\u4e00-\u9fff]+$", username):
-        return {"error": "用户名只能包含字母、数字、下划线和中文"}, 400
-
-    if "@" not in email or "." not in email:
-        return {"error": "邮箱格式不正确"}, 400
-
-    password_error = _validate_password(password)
-    if password_error:
-        return {"error": password_error}, 400
-
-    if get_user(db, username):
-        return {"error": "用户名已存在"}, 400
-
-    if get_user(db, email):
-        return {"error": "邮箱已被注册"}, 400
-
-    user = create_user(db, username, email, password)
-    return {"success": True, "message": "注册成功", "username": user.username}
-
-
-@app.post("/api/auth/login")
-@limiter.limit("10/minute")
-async def login(request: Request, db: Session = Depends(get_db)):
-    data = await request.json()
-    username = data.get("username")
-    password = data.get("password")
-
-    user = authenticate_user(db, username, password)
-    if not user:
-        return {"error": "用户名或密码错误"}, 401
-
-    access_token_expires = timedelta(minutes=30 * 24 * 60)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-
-    response = JSONResponse({
-        "success": True,
-        "message": "登录成功",
-        "access_token": access_token,
-        "username": user.username,
-    })
-    response.set_cookie(key="access_token", value=access_token, httponly=True)
-    return response
-
-
-@app.post("/api/auth/logout")
-async def logout():
-    response = JSONResponse({"success": True, "message": "退出成功"})
-    response.set_cookie(key="access_token", value="", expires=0)
-    return response
-
-
-@app.get("/api/auth/me")
-async def get_current_user_info(user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"authenticated": False}
-    return {"authenticated": True, "user": user}
 
 
 @app.post("/api/session")
@@ -649,62 +564,6 @@ async def health(provider: str = DEFAULT_PROVIDER, api_key: Optional[str] = None
     if result["status"] == "ok":
         return {"status": "ok", "provider": provider, "detail": result}
     return {"status": "error", "message": result.get("message", "连接失败"), "provider": provider}
-
-
-@app.get("/api/memory/stats")
-async def get_memory_stats(user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"short_term_summaries": 0, "long_term_memories": 0}
-    return memory_manager.get_stats(user["id"])
-
-
-@app.get("/api/memory")
-async def get_all_memories(user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"short_term": [], "long_term": []}
-    return memory_manager.get_all_memories(user["id"])
-
-
-@app.post("/api/memory")
-async def add_memory(request: Request, user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"error": "未登录"}, 401
-    data = await request.json()
-    content = data.get("content", "")
-    category = data.get("category", "general")
-    metadata = data.get("metadata", {})
-
-    if not content:
-        return {"error": "内容不能为空"}
-
-    memory_id = memory_manager.add_long_term_memory(user["id"], content, category, metadata)
-    return {"memory_id": memory_id}
-
-
-@app.delete("/api/memory/{memory_id}")
-async def delete_memory(memory_id: str, user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"error": "未登录"}, 401
-    from backend.memory.long_term import LongTermMemory
-    long = LongTermMemory(user["id"])
-    success = long.delete_memory(memory_id)
-    return {"success": success}
-
-
-@app.get("/api/memory/search")
-async def search_memories(query: str, top_k: int = 5, user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"results": []}
-    results = memory_manager.retrieve_relevant_memories(user["id"], query, top_k)
-    return {"results": results}
-
-
-@app.delete("/api/memory")
-async def clear_all_memories(user: Dict = Depends(get_current_user)):
-    if not user:
-        return {"error": "未登录"}, 401
-    memory_manager.clear_all(user["id"])
-    return {"success": True}
 
 
 # ---------------------------------------------------------------------------

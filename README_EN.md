@@ -102,10 +102,15 @@ Jarvis/
 │   ├── jarvis.db             # SQLite database
 │   └── vectors/              # ChromaDB vector store
 ├── mcp_servers.json          # MCP server config file (optional)
-├── main.py                 # FastAPI main app (API routes)
+├── main.py                 # FastAPI main application (API routes)
 ├── session_manager.py      # Session management (SQLite persistence)
-├── context_manager.py      # Context management & Token truncation
+├── context_manager.py      # Context management & token truncation
 ├── requirements.txt
+├── Dockerfile               # Multi-stage build (frontend + backend)
+├── docker-compose.yml       # Docker Compose configuration
+├── .dockerignore
+├── .env.example             # Environment variable example
+├── .env.docker              # Docker environment variable example
 ├── README.md
 └── README_EN.md
 ```
@@ -150,6 +155,57 @@ Visit `http://localhost:8000`:
 2. **Login System** → Use registered credentials
 3. **Configure Model** → Left sidebar ⚙️ settings to configure Provider, API Key (encrypted storage)
 4. **Start Chatting** → Input messages in chat panel, streaming output supported
+
+## Docker Deployment
+
+```bash
+# 1. Configure environment variables (change SECRET_KEY and other settings)
+cp .env.docker .env
+# Edit .env file with your SECRET_KEY and LLM configuration
+
+# 2. Start services (auto-builds frontend + backend)
+docker compose up -d
+
+# 3. View logs
+docker compose logs -f
+
+# 4. Stop services
+docker compose down
+```
+
+Visit `http://localhost:8000` to use.
+
+> **Notes:**
+> - To access host services (e.g., local llama.cpp) from Docker, use `host.docker.internal`
+> - Data persists in `./data/` directory (SQLite + ChromaDB vector store)
+> - Embedding model cache is stored in the Docker volume `embedding_cache`
+
+### China Mainland Mirror
+
+Docker Hub is unstable in China. Configure **Docker daemon registry mirrors**:
+
+**Step 1: Configure mirror accelerator**
+
+Open Docker Desktop → **Settings** → **Docker Engine**, add to `daemon.json`:
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+```
+
+Click **Apply & Restart**.
+
+**Step 2: Build and start**
+
+```bash
+cp .env.docker.china .env
+docker compose build
+docker compose up -d
+```
 
 ## User System
 

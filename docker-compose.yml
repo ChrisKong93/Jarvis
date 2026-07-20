@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 中国大陆用户可在 .env 中设置 PIP_INDEX_URL 加速 pip 安装
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    container_name: jarvis
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-8000}
+    volumes:
+      # 持久化数据：SQLite、ChromaDB 向量库、会话
+      - ./data:/app/data
+      # Embedding 模型缓存（避免每次启动重复下载）
+      - embedding_cache:/app/backend/memory/embeddings_cache
+    restart: unless-stopped
+
+volumes:
+  embedding_cache:

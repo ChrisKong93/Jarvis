@@ -6,52 +6,17 @@ import re
 import threading
 import time
 from itertools import groupby
-from typing import Any, Dict, Generator, List, Optional, TypedDict
-
-from langgraph.graph import END, StateGraph
+from typing import Any, Dict, Generator, List, Optional
 
 from context_manager import calculate_messages_tokens, truncate_messages
 
+from .agent_types import AgentState
+from .graph_builders import build_chat_graph, build_plan_execute_graph, build_react_graph
 from .memory import memory_manager
 from .providers import LLMError, llm_client
 from .tools.base import tool_registry
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Unified AgentState — 所有模式共用
-# ---------------------------------------------------------------------------
-
-class AgentState(TypedDict):
-    messages: List[Dict]
-    final_response: str
-    llm_stats: Dict
-    provider_config: Dict
-    last_user_message: str
-    tools_for_llm: List[Dict]
-
-    # ReAct 状态
-    tool_results: List[Dict]
-    thinking_steps: List[str]
-    memory_context: Dict
-    tool_used: bool
-    reflection_count: int
-    step_count: int
-    max_thinking_steps: int
-    max_reflection_attempts: int
-    llm_response: Dict
-    tool_calls: List[Dict]
-    tool_results_batch: List[Dict]
-    has_error: bool
-
-    # Plan & Execute 状态
-    plan: List[Dict]
-    groups: List[List[Dict]]
-    current_group_index: int
-    step_results: List[Dict]
-    total_steps: int
-    plan_steps: List[str]
 
 
 # ---------------------------------------------------------------------------
@@ -518,18 +483,6 @@ class GraphAgent:
             "llm_stats": self._merge_llm_stats(state["llm_stats"], response),
         }
 
-    def _build_chat_graph(self):
-        builder = StateGraph(AgentState)
-        builder.add_node("prepare_state", self._node_prepare_chat_state)
-        builder.add_node("call_llm", self._node_chat_call_llm)
-        builder.add_node("update_memory", self._node_update_memory)
-
-        builder.set_entry_point("prepare_state")
-        builder.add_edge("prepare_state", "call_llm")
-        builder.add_edge("call_llm", "update_memory")
-        builder.add_edge("update_memory", END)
-        return builder.compile()
-
     # ================================================================
     # REACT Graph
     # ================================================================
@@ -717,29 +670,6 @@ class GraphAgent:
             return "reflect"
 
         return "final"
-
-    def _build_react_graph(self):
-        builder = StateGraph(AgentState)
-
-        builder.add_node("prepare_state", self._node_prepare_state)
-        builder.add_node("call_llm", self._node_call_llm)
-        builder.add_node("execute_tools", self._node_execute_tools)
-        builder.add_node("reflect", self._node_reflect)
-        builder.add_node("final", self._node_final)
-        builder.add_node("update_memory", self._node_update_memory)
-
-        builder.set_entry_point("prepare_state")
-        builder.add_edge("prepare_state", "call_llm")
-        builder.add_edge("call_llm", "execute_tools")
-        builder.add_conditional_edges("execute_tools", self._edge_react_next, {
-            "reflect": "reflect",
-            "final": "final",
-        })
-        builder.add_edge("reflect", "call_llm")
-        builder.add_edge("final", "update_memory")
-        builder.add_edge("update_memory", END)
-
-        return builder.compile()
 
     # ================================================================
     # PLAN & EXECUTE Graph
@@ -947,30 +877,6 @@ class GraphAgent:
             return "summarize"
         return "execute_group"
 
-    def _build_plan_execute_graph(self):
-        builder = StateGraph(AgentState)
-
-        builder.add_node("prepare_state", self._node_prepare_state)
-        builder.add_node("planner", self._node_plan)
-        builder.add_node("execute_group", self._node_execute_group)
-        builder.add_node("summarize", self._node_summarize)
-        builder.add_node("update_memory", self._node_update_memory)
-
-        builder.set_entry_point("prepare_state")
-        builder.add_edge("prepare_state", "planner")
-        builder.add_conditional_edges("planner", self._edge_after_plan, {
-            "memory": "update_memory",
-            "execute": "execute_group",
-        })
-        builder.add_conditional_edges("execute_group", self._edge_plan_next, {
-            "execute_group": "execute_group",
-            "summarize": "summarize",
-        })
-        builder.add_edge("summarize", "update_memory")
-        builder.add_edge("update_memory", END)
-
-        return builder.compile()
-
     # ================================================================
     # Shared Node: update_memory
     # ================================================================
@@ -1045,15 +951,15 @@ class GraphAgent:
     def _get_graph(self, mode: str):
         if mode == "chat":
             if self._chat_graph is None:
-                self._chat_graph = self._build_chat_graph()
+                self._chat_graph = build_chat_graph(self)
             return self._chat_graph
         elif mode == "react":
             if self._react_graph is None:
-                self._react_graph = self._build_react_graph()
+                self._react_graph = build_react_graph(self)
             return self._react_graph
         elif mode == "plan_execute":
             if self._plan_execute_graph is None:
-                self._plan_execute_graph = self._build_plan_execute_graph()
+                self._plan_execute_graph = build_plan_execute_graph(self)
             return self._plan_execute_graph
         else:
             raise ValueError(f"Unknown agent mode: {mode}")

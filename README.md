@@ -106,6 +106,11 @@ Jarvis/
 ├── session_manager.py      # 会话管理（SQLite 持久化）
 ├── context_manager.py      # 上下文管理与 Token 截断
 ├── requirements.txt
+├── Dockerfile               # 多阶段构建（前端 + 后端）
+├── docker-compose.yml       # Docker Compose 配置
+├── .dockerignore
+├── .env.example             # 环境变量示例
+├── .env.docker              # Docker 环境变量示例
 ├── README.md
 └── README_EN.md
 ```
@@ -150,6 +155,59 @@ venv/bin/python main.py
 2. **登录系统** → 使用注册的账号登录
 3. **配置模型** → 左侧栏 ⚙️ 设置中配置 Provider、API Key（Key 加密存储）
 4. **开始对话** → 在聊天面板输入消息，支持流式输出
+
+## Docker 部署
+
+```bash
+# 1. 配置环境变量（修改 SECRET_KEY 和其他配置）
+cp .env.docker .env
+# 编辑 .env 文件，填入你的 SECRET_KEY 和 LLM 配置
+
+# 2. 启动服务（自动构建前端 + 后端）
+docker compose up -d
+
+# 3. 查看日志
+docker compose logs -f
+
+# 4. 停止服务
+docker compose down
+```
+
+访问 `http://localhost:8000` 使用。
+
+> **注意事项：**
+> - 本地 llama.cpp 服务在 Docker 中访问请使用 `host.docker.internal`
+> - 数据持久化在 `./data/` 目录（SQLite + ChromaDB 向量库）
+> - Embedding 模型缓存保存在 Docker 卷 `embedding_cache` 中
+
+### 中国大陆加速
+
+Docker Hub 在国内访问不稳定，需要配置 **Docker daemon registry mirror**：
+
+**第一步：配置镜像加速器**
+
+打开 Docker Desktop → **Settings** → **Docker Engine**，在 `daemon.json` 中加入：
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+```
+
+点击 **Apply & Restart**。
+
+> 如果上述镜像都不可用，参考 [Docker 官方文档](https://docs.docker.com/engine/daemon/#configure-mirrors) 配置其他镜像源。
+
+**第二步：构建并启动**
+
+```bash
+cp .env.docker.china .env
+docker compose build
+docker compose up -d
+```
 
 ## 用户系统
 
