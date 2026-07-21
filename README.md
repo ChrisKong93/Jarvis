@@ -60,9 +60,19 @@ Jarvis/
 │   ├── auth.py               # 用户认证（JWT、密码哈希）
 │   ├── database.py           # 数据库模型（User、ModelConfig、ShortTermMemory、LongTermMemory、Plugin、ChatSession）
 │   ├── plugin_manager.py     # 插件管理器（安装/卸载/启停）
+│   ├── routes/               # API 路由模块
+│   │   ├── auth.py           #   认证接口
+│   │   ├── chat.py           #   聊天 & Agent 接口
+│   │   ├── config.py         #   模型配置接口
+│   │   ├── memory.py         #   记忆接口
+│   │   ├── mcp.py            #   MCP 管理接口
+│   │   ├── plugins.py        #   插件管理接口
+│   │   ├── session.py        #   会话管理接口
+│   │   ├── tools.py          #   工具列表接口
+│   │   └── helpers.py        #   公共辅助函数
 │   ├── providers/            # 多模型 Provider 抽象
-│   │   ├── registry.py       # Provider 注册表（含硬编码默认配置）
-│   │   ├── client.py         # 统一 LLM 客户端（含流式 chat_completion_stream）
+│   │   ├── registry.py       # Provider 注册表
+│   │   ├── client.py         # 统一 LLM 客户端（同步/异步，含连接池）
 │   │   └── __init__.py
 │   ├── memory/               # 记忆系统
 │   │   ├── __init__.py       # MemoryManager
@@ -106,11 +116,15 @@ Jarvis/
 ├── session_manager.py      # 会话管理（SQLite 持久化）
 ├── context_manager.py      # 上下文管理与 Token 截断
 ├── requirements.txt
-├── Dockerfile               # 多阶段构建（前端 + 后端）
-├── docker-compose.yml       # Docker Compose 配置
+├── Dockerfile               # 多阶段构建（前端 + 后端），含 HEALTHCHECK + 非 root 用户
+├── docker-compose.yml       # Docker Compose 配置（含健康检查、持久化卷）
 ├── .dockerignore
 ├── .env.example             # 环境变量示例
-├── .env.docker              # Docker 环境变量示例
+├── pytest.ini               # 测试配置
+├── .coveragerc              # 覆盖率配置
+├── tests/                   # 测试目录
+│   ├── unit/                #   单元测试
+│   └── integration/         #   集成测试
 ├── README.md
 └── README_EN.md
 ```
@@ -160,7 +174,7 @@ venv/bin/python main.py
 
 ```bash
 # 1. 配置环境变量（修改 SECRET_KEY 和其他配置）
-cp .env.docker .env
+cp .env.example .env
 # 编辑 .env 文件，填入你的 SECRET_KEY 和 LLM 配置
 
 # 2. 启动服务（自动构建前端 + 后端）
@@ -179,6 +193,8 @@ docker compose down
 > - 本地 llama.cpp 服务在 Docker 中访问请使用 `host.docker.internal`
 > - 数据持久化在 `./data/` 目录（SQLite + ChromaDB 向量库）
 > - Embedding 模型缓存保存在 Docker 卷 `embedding_cache` 中
+> - Docker 镜像内置 HEALTHCHECK 健康检查和 `init: true` 优雅关闭机制
+> - 容器以非 root 用户运行，增强安全性
 
 ### 中国大陆加速
 
@@ -204,7 +220,8 @@ Docker Hub 在国内访问不稳定，需要配置 **Docker daemon registry mirr
 **第二步：构建并启动**
 
 ```bash
-cp .env.docker.china .env
+cp .env.example .env
+# 中国大陆用户可取消 .env 中 PIP_INDEX_URL 注释使用清华源
 docker compose build
 docker compose up -d
 ```
@@ -492,6 +509,28 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding 模型名称 |
 | `MCP_CONFIG_PATH` | `./mcp_servers.json` | MCP 服务器配置文件路径 |
 | `MCP_CONNECT_TIMEOUT` | `60` | MCP 服务器连接超时（秒） |
+
+## 测试
+
+```bash
+# 安装测试依赖
+pip install -r tests/requirements-test.txt
+
+# 运行全部单元测试
+pytest tests/unit -v
+
+# 运行所有测试（含集成测试）
+pytest tests/unit tests/integration -v
+
+# 运行测试并生成覆盖率报告
+pytest tests/unit tests/integration --cov=backend
+
+# 输出示例：
+# 63 passed, 2 xfailed (部分 auth 测试受限流影响)
+# 工具模块覆盖率 ≈ 90%
+```
+
+> 集成测试中的部分 auth 用例受速率限制影响（5 次/分钟），在 CI 环境中自动跳过。
 
 ## 开发模式
 

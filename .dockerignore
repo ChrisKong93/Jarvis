@@ -2,13 +2,17 @@
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+*.whl
 .venv/
 venv/
 
 # Node
 frontend/node_modules/
+frontend/dist/
 
-# Data (mounted as volume in Docker)
+# Data (mounted as volume)
 data/
 
 # IDE
@@ -25,6 +29,19 @@ data/
 .env
 .env.*
 
+# Tests
+tests/
+
+# Documentation
+*.md
+*.pdf
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md

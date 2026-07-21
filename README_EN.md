@@ -60,9 +60,19 @@ Jarvis/
 │   ├── auth.py               # User authentication (JWT, password hashing)
 │   ├── database.py           # Database models (User, ModelConfig, ShortTermMemory, LongTermMemory, Plugin, ChatSession)
 │   ├── plugin_manager.py     # Plugin manager (install/uninstall/enable/disable)
+│   ├── routes/               # API route modules
+│   │   ├── auth.py           #   Auth endpoints
+│   │   ├── chat.py           #   Chat & Agent endpoints
+│   │   ├── config.py         #   Model config endpoints
+│   │   ├── memory.py         #   Memory endpoints
+│   │   ├── mcp.py            #   MCP management endpoints
+│   │   ├── plugins.py        #   Plugin management endpoints
+│   │   ├── session.py        #   Session management endpoints
+│   │   ├── tools.py          #   Tool list endpoint
+│   │   └── helpers.py        #   Shared helper functions
 │   ├── providers/            # Multi-model Provider abstraction
-│   │   ├── registry.py       # Provider registry (hardcoded default configs)
-│   │   ├── client.py         # Unified LLM client (with streaming chat_completion_stream)
+│   │   ├── registry.py       # Provider registry
+│   │   ├── client.py         # Unified LLM client (sync/async, with connection pool)
 │   │   └── __init__.py
 │   ├── memory/               # Memory system
 │   │   ├── __init__.py       # MemoryManager
@@ -106,11 +116,15 @@ Jarvis/
 ├── session_manager.py      # Session management (SQLite persistence)
 ├── context_manager.py      # Context management & token truncation
 ├── requirements.txt
-├── Dockerfile               # Multi-stage build (frontend + backend)
-├── docker-compose.yml       # Docker Compose configuration
+├── Dockerfile               # Multi-stage build (frontend + backend), with HEALTHCHECK + non-root user
+├── docker-compose.yml       # Docker Compose config (healthcheck, persistent volumes)
 ├── .dockerignore
 ├── .env.example             # Environment variable example
-├── .env.docker              # Docker environment variable example
+├── pytest.ini               # Test configuration
+├── .coveragerc              # Coverage configuration
+├── tests/                   # Test directory
+│   ├── unit/                #   Unit tests
+│   └── integration/         #   Integration tests
 ├── README.md
 └── README_EN.md
 ```
@@ -160,7 +174,7 @@ Visit `http://localhost:8000`:
 
 ```bash
 # 1. Configure environment variables (change SECRET_KEY and other settings)
-cp .env.docker .env
+cp .env.example .env
 # Edit .env file with your SECRET_KEY and LLM configuration
 
 # 2. Start services (auto-builds frontend + backend)
@@ -179,6 +193,8 @@ Visit `http://localhost:8000` to use.
 > - To access host services (e.g., local llama.cpp) from Docker, use `host.docker.internal`
 > - Data persists in `./data/` directory (SQLite + ChromaDB vector store)
 > - Embedding model cache is stored in the Docker volume `embedding_cache`
+> - Docker image includes HEALTHCHECK and graceful shutdown via `init: true`
+> - Container runs as a non-root user for enhanced security
 
 ### China Mainland Mirror
 
@@ -202,7 +218,8 @@ Click **Apply & Restart**.
 **Step 2: Build and start**
 
 ```bash
-cp .env.docker.china .env
+cp .env.example .env
+# For China mainland users: uncomment PIP_INDEX_URL in .env to use Tsinghua mirror
 docker compose build
 docker compose up -d
 ```
@@ -490,6 +507,28 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model name |
 | `MCP_CONFIG_PATH` | `./mcp_servers.json` | MCP server config file path |
 | `MCP_CONNECT_TIMEOUT` | `60` | MCP server connection timeout (seconds) |
+
+## Testing
+
+```bash
+# Install test dependencies
+pip install -r tests/requirements-test.txt
+
+# Run all unit tests
+pytest tests/unit -v
+
+# Run all tests (unit + integration)
+pytest tests/unit tests/integration -v
+
+# Run tests with coverage report
+pytest tests/unit tests/integration --cov=backend
+
+# Expected output:
+# 63 passed, 2 xfailed (auth tests affected by rate limiting)
+# Tool module coverage ≈ 90%
+```
+
+> Some auth integration tests may be skipped due to rate limiting (5 req/min).
 
 ## Development Mode
 

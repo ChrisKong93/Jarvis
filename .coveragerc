@@ -1,0 +1,22 @@
+[run]
+branch = True
+omit =
+    tests/*
+    */venv/*
+    */.venv/*
+    */.env/*
+    data/*
+    dist/*
+    node_modules/*
+
+[report]
+show_missing = True
+skip_covered = True
+omit =
+    tests/*
+    */venv/*
+    */.venv/*
+    */.env/*
+    data/*
+    dist/*
+    node_modules/*

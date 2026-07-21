@@ -40,29 +40,29 @@ def register_auth_routes(app, limiter, get_current_user):
         password = data.get("password")
 
         if not username or not email or not password:
-            return {"error": "用户名、邮箱和密码不能为空"}, 400
+            return JSONResponse({"error": "用户名、邮箱和密码不能为空"}, status_code=400)
 
         username = username.strip()
         email = email.strip()
 
         if len(username) < 2:
-            return {"error": "用户名至少 2 个字符"}, 400
+            return JSONResponse({"error": "用户名至少 2 个字符"}, status_code=400)
 
         if not re.match(r"^[a-zA-Z0-9_\u4e00-\u9fff]+$", username):
-            return {"error": "用户名只能包含字母、数字、下划线和中文"}, 400
+            return JSONResponse({"error": "用户名只能包含字母、数字、下划线和中文"}, status_code=400)
 
         if "@" not in email or "." not in email:
-            return {"error": "邮箱格式不正确"}, 400
+            return JSONResponse({"error": "邮箱格式不正确"}, status_code=400)
 
         password_error = _validate_password(password)
         if password_error:
-            return {"error": password_error}, 400
+            return JSONResponse({"error": password_error}, status_code=400)
 
         if get_user(db, username):
-            return {"error": "用户名已存在"}, 400
+            return JSONResponse({"error": "用户名已存在"}, status_code=400)
 
         if get_user(db, email):
-            return {"error": "邮箱已被注册"}, 400
+            return JSONResponse({"error": "邮箱已被注册"}, status_code=400)
 
         user = create_user(db, username, email, password)
         return {"success": True, "message": "注册成功", "username": user.username}
@@ -76,7 +76,7 @@ def register_auth_routes(app, limiter, get_current_user):
 
         user = authenticate_user(db, username, password)
         if not user:
-            return {"error": "用户名或密码错误"}, 401
+            return JSONResponse({"error": "用户名或密码错误"}, status_code=401)
 
         access_token_expires = timedelta(minutes=30 * 24 * 60)
         access_token = create_access_token(
