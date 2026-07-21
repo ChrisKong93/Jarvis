@@ -2,8 +2,13 @@
 
 import logging
 import os
+import sys
 import threading
+from pathlib import Path
 from typing import Dict, Optional
+
+# Ensure project root is on sys.path (for "python backend/main.py" direct invocation)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends

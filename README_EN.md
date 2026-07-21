@@ -157,6 +157,10 @@ npm run build
 
 ```bash
 # Use venv Python
+# Method 1 (recommended)
+uvicorn backend.main:app --reload
+
+# Method 2
 venv/bin/python backend/main.py
 ```
 

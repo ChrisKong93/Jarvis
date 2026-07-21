@@ -154,6 +154,10 @@ npm run build
 
 ```bash
 # 使用虚拟环境的 Python 启动
+# 方式一（推荐）
+uvicorn backend.main:app --reload
+
+# 方式二
 venv/bin/python backend/main.py
 ```
 
