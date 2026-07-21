@@ -5,7 +5,7 @@ def estimate_token_count(text: str) -> int:
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
     english_words = len(re.findall(r'[a-zA-Z]+', text))
     other_chars = len(text) - chinese_chars - english_words
-    
+
     return chinese_chars + english_words // 2 + other_chars // 2
 
 def calculate_messages_tokens(messages: List[Dict]) -> int:
@@ -19,22 +19,22 @@ def calculate_messages_tokens(messages: List[Dict]) -> int:
     return total_tokens
 
 def truncate_messages(
-    messages: List[Dict], 
+    messages: List[Dict],
     max_tokens: int = 2048,
     system_prompt: str = None
 ) -> List[Dict]:
     system_tokens = estimate_token_count(system_prompt) if system_prompt else 0
     available_tokens = max_tokens - system_tokens - 512
-    
+
     if calculate_messages_tokens(messages) <= available_tokens:
         return messages
-    
+
     truncated = []
     total_tokens = 0
-    
+
     for msg in reversed(messages):
         msg_tokens = calculate_messages_tokens([msg])
-        
+
         if total_tokens + msg_tokens <= available_tokens:
             truncated.insert(0, msg)
             total_tokens += msg_tokens
@@ -50,5 +50,5 @@ def truncate_messages(
                         'content': truncated_content + '...'
                     })
             break
-    
+
     return truncated

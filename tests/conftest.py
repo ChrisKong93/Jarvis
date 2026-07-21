@@ -67,7 +67,7 @@ def mock_httpx_client() -> Generator[MagicMock, None, None]:
 @pytest.fixture
 def app():
     """Create the FastAPI application for testing."""
-    from main import app
+    from backend.main import app
     return app
 
 

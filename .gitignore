@@ -122,6 +122,9 @@ Thumbs.db
 # Runtime data (SQLite, ChromaDB vectors)
 /data/
 
+# Runtime logs
+server.log
+
 # Node dependencies
 frontend/node_modules/
 frontend/dist/

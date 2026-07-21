@@ -1,3 +1,5 @@
+"""Jarvis AI Assistant — FastAPI application entry point."""
+
 import logging
 import os
 import threading
@@ -18,11 +20,14 @@ from backend.graph_agent import GraphAgent
 from backend.mcp import mcp_manager
 from backend.plugin_manager import seed_default_plugins
 from backend.routes.helpers import sync_mcp_tools
-from session_manager import session_manager
+from backend.session_manager import session_manager
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Project root is one level above this file's directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # SECRET_KEY 安全检查（用于 API Key 加密）
 DEFAULT_SECRET_KEY = "jarvis-secret-key-change-in-production"
@@ -39,7 +44,7 @@ app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-dist_dir = os.path.join(os.path.dirname(__file__), "dist")
+dist_dir = os.path.join(BASE_DIR, "dist")
 if os.path.exists(dist_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(dist_dir, "assets")), name="assets")
 
@@ -128,7 +133,7 @@ async def index(request: Request):
         with open(dist_index, "r", encoding="utf-8") as f:
             content = f.read()
         return HTMLResponse(content, media_type="text/html")
-    frontend_index = os.path.join(os.path.dirname(__file__), "frontend", "index.html")
+    frontend_index = os.path.join(BASE_DIR, "frontend", "index.html")
     if os.path.exists(frontend_index):
         with open(frontend_index, "r", encoding="utf-8") as f:
             content = f.read()

@@ -2,7 +2,7 @@ from typing import Dict
 
 from fastapi import Depends
 
-from session_manager import session_manager
+from backend.session_manager import session_manager
 
 
 def register_session_routes(app, get_current_user):

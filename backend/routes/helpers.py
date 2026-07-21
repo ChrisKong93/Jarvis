@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.crypto_utils import decrypt_api_key
 from backend.database import ModelConfig
-from session_manager import session_manager
+from backend.session_manager import session_manager
 
 logger = logging.getLogger(__name__)
 

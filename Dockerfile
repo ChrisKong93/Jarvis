@@ -5,11 +5,9 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# 利用 Docker 缓存：先安装依赖，再复制源码
+# 利用 Docker 缓存：先安装依赖（package-lock.json 可选），再复制源码
 COPY frontend/package.json ./
-# 兼容 package-lock.json 不存在的情况
-COPY frontend/package-lock.json ./ || true
-RUN npm ci || npm install
+RUN npm ci 2>/dev/null || npm install
 
 COPY frontend/ .
 RUN npm run build
@@ -42,10 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=frontend-builder /app/dist ./dist
 
 # ── 复制后端代码 ──
-COPY main.py .
 COPY backend/ backend/
-COPY context_manager.py .
-COPY session_manager.py .
 
 # ── 创建非 root 用户 ──
 RUN addgroup --system --gid 1001 jarvis && \
@@ -72,4 +67,4 @@ ENV SECRET_KEY=jarvis-docker-secret-change-me
 # 数据卷挂载点
 VOLUME ["/app/data", "/app/backend/memory/embeddings_cache"]
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

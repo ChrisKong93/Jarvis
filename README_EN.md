@@ -87,10 +87,13 @@ Jarvis/
 │   │   ├── file_tool.py
 │   │   ├── search.py
 │   │   └── weather.py
+│   ├── session_manager.py    # Session management (SQLite persistence)
+│   ├── context_manager.py    # Context management & token truncation
 │   └── mcp/                  # MCP (Model Context Protocol) integration
 │       ├── __init__.py
 │       ├── manager.py        # MCP server manager (JSON-RPC 2.0, supports stdio/SSE)
-│       └── adapter.py        # MCP tool adapter
+│       ├── adapter.py        # MCP tool adapter
+│       └── servers.json      # MCP server config file (optional)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
@@ -111,10 +114,6 @@ Jarvis/
 ├── data/                     # Runtime data
 │   ├── jarvis.db             # SQLite database
 │   └── vectors/              # ChromaDB vector store
-├── mcp_servers.json          # MCP server config file (optional)
-├── main.py                 # FastAPI main application (API routes)
-├── session_manager.py      # Session management (SQLite persistence)
-├── context_manager.py      # Context management & token truncation
 ├── requirements.txt
 ├── Dockerfile               # Multi-stage build (frontend + backend), with HEALTHCHECK + non-root user
 ├── docker-compose.yml       # Docker Compose config (healthcheck, persistent volumes)
@@ -158,7 +157,7 @@ npm run build
 
 ```bash
 # Use venv Python
-venv/bin/python main.py
+venv/bin/python backend/main.py
 ```
 
 ### 5. Usage
@@ -296,7 +295,7 @@ Jarvis supports [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 
 ### Configuration
 
-Create a `mcp_servers.json` file in the project root:
+Create a `backend/mcp/servers.json` file:
 
 ```json
 {
@@ -505,7 +504,7 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 | `PORT` | `8000` | Service port |
 | `SECRET_KEY` | `jarvis-secret-key-change-in-production` | API Key encryption key (change in production) |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Embedding model name |
-| `MCP_CONFIG_PATH` | `./mcp_servers.json` | MCP server config file path |
+| `MCP_CONFIG_PATH` | `backend/mcp/servers.json` | MCP server config file path |
 | `MCP_CONNECT_TIMEOUT` | `60` | MCP server connection timeout (seconds) |
 
 ## Testing

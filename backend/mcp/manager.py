@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 MCP_CONFIG_PATH = os.environ.get(
     "MCP_CONFIG_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "mcp_servers.json"),
+    os.path.join(os.path.dirname(__file__), "servers.json"),
 )
 MCP_CONNECT_TIMEOUT = int(os.environ.get("MCP_CONNECT_TIMEOUT", "60"))  # 单服务器连接超时（秒）
 
