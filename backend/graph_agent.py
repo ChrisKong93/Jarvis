@@ -10,11 +10,14 @@ from typing import Any, Dict, Generator, List, Optional
 
 from backend.context_manager import calculate_messages_tokens, truncate_messages
 
+from langgraph.graph import StateGraph
+
 from .agent_types import AgentState
 from .graph_builders import build_chat_graph, build_plan_execute_graph, build_react_graph
 from .memory import memory_manager
 from .providers import LLMError, llm_client
 from .tools.base import tool_registry
+from .database import Plugin as PluginModel, get_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class GraphAgent:
 
     def __init__(self):
         self._load_tools()
-        self.summary_frequency = 5
+        self._last_summary_user_tokens = 0
         self.max_thinking_steps = 5
         self.max_reflection_attempts = 2
 
@@ -45,9 +48,35 @@ class GraphAgent:
             calculator, datetime_tool, file_tool, search, weather,
         )
 
+    @staticmethod
+    def _get_enabled_tool_names() -> set:
+        """返回当前可用的工具名称集合。
+
+        包括：
+        - Plugin 表中已启用的内置工具
+        - MCP 工具（不受 Plugin 表控制，有注册即可用）
+        """
+        enabled = set()
+        db = get_db_session()
+        try:
+            plugins = db.query(PluginModel).filter(
+                PluginModel.is_enabled == True
+            ).all()
+            enabled.update(p.name for p in plugins)
+        finally:
+            db.close()
+        # MCP 工具始终可用（它们有自己独立的启停管理）
+        for name, tool in tool_registry.tools.items():
+            if type(tool).__name__ == "MCPToolAdapter":
+                enabled.add(name)
+        return enabled
+
     def _get_tools_for_llm(self) -> List[Dict[str, Any]]:
+        enabled = self._get_enabled_tool_names()
         tools = []
         for tool in tool_registry.tools.values():
+            if tool.name not in enabled:
+                continue
             params = {}
             required = []
             for pn, pi in tool.parameters.items():
@@ -66,15 +95,16 @@ class GraphAgent:
 
     # ---- Keyword-based tool guessing ----
 
-    @staticmethod
-    def _guess_tool_for_query(query: str) -> Optional[str]:
-        keywords = {
+    def _guess_tool_for_query(self, query: str) -> Optional[str]:
+        enabled = self._get_enabled_tool_names()
+        all_keywords = {
             "calculator": ["计算", "算", "加", "减", "乘", "除", "等于", "多少", "平方", "开方", "sin", "cos", "tan"],
             "weather": ["天气", "温度", "气温", "下雨", "晴天", "预报"],
             "datetime": ["时间", "几点", "日期", "现在", "今天", "明天"],
             "search": ["搜索", "查找", "信息", "新闻", "最新", "进展"],
             "file": ["文件", "读取", "写入", "保存"],
         }
+        keywords = {k: v for k, v in all_keywords.items() if k in enabled}
         for tool_name, terms in keywords.items():
             for term in terms:
                 if term in query:
@@ -115,7 +145,7 @@ class GraphAgent:
         )
 
     def _call_llm_stream(self, messages: List[Dict], provider_config: Dict,
-                          tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+                          tools: Optional[List[Dict]] = None) -> Generator[Dict[str, Any], None, None]:
         """Streaming LLM call.
         If ``_stream_queue`` exists in provider_config, pushes ``token`` events.
         Returns same shape as ``_call_llm`` (without token counts if not available).
@@ -148,6 +178,9 @@ class GraphAgent:
             elif event["type"] == "done":
                 response_time = event.get("response_time", 0.0)
                 used_model = event.get("model", provider_config.get("model"))
+                usage = event.get("usage", {})
+                completion_tokens = usage.get("completion_tokens", 0)
+                prompt_tokens = usage.get("prompt_tokens", 0)
 
         return {
             "content": content,
@@ -198,6 +231,9 @@ class GraphAgent:
             return results
 
     def _execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> str:
+        enabled = self._get_enabled_tool_names()
+        if tool_name not in enabled:
+            return f"工具「{tool_name}」已被禁用，无法执行"
         tool = tool_registry.get_tool(tool_name)
         if tool:
             try:
@@ -250,14 +286,29 @@ class GraphAgent:
     # ---- Prompt builders ----
 
     def _build_system_prompt(self, memory_context: Dict) -> str:
-        prompt = """你是一个 AI 助手，可以使用工具来获取信息或执行操作。
+        enabled = self._get_enabled_tool_names()
+        tool_descs = {
+            "calculator": "数学计算（如：2+3、123*456）",
+            "weather": "天气查询（如：北京天气）",
+            "datetime": "时间日期查询（如：现在几点）",
+            "search": "信息搜索（如：人工智能最新进展）",
+            "file": "文件读取/写入操作",
+        }
+        lines = []
+        for name, desc in tool_descs.items():
+            if name in enabled:
+                lines.append(f"- {name}: {desc}")
+        # MCP 工具动态加入
+        for name, tool in tool_registry.tools.items():
+            if name not in enabled:
+                continue
+            if type(tool).__name__ == "MCPToolAdapter":
+                lines.append(f"- {name}: {tool.description}")
+        available_tools = "\n".join(lines)
+        prompt = f"""你是一个 AI 助手，可以使用工具来获取信息或执行操作。
 
 ## 可用工具
-- calculator: 数学计算（如：2+3、123*456）
-- weather: 天气查询（如：北京天气）
-- datetime: 时间日期查询（如：现在几点）
-- search: 信息搜索（如：人工智能最新进展）
-- file: 文件读取/写入操作
+{available_tools}
 
 ## 工作方式
 1. 收到用户问题后，先思考需要什么信息，再决定是否调用工具
@@ -267,6 +318,12 @@ class GraphAgent:
 5. 如果不需要工具，直接回答即可
 
 注意：不要编造工具调用的结果，必须实际调用工具获取真实信息。"""
+        if memory_context.get("used"):
+            prompt += f"\n\n## 相关记忆\n{memory_context.get('text', '')}"
+        return prompt
+
+    def _build_chat_system_prompt(self, memory_context: Dict) -> str:
+        prompt = "你是一个 AI 助手，请用中文回答用户的问题。请基于对话历史和记忆中的相关信息来回复。"
         if memory_context.get("used"):
             prompt += f"\n\n## 相关记忆\n{memory_context.get('text', '')}"
         return prompt
@@ -360,7 +417,8 @@ class GraphAgent:
     @staticmethod
     def _group_plan_steps(plan: List[Dict]) -> List[List[Dict]]:
         def key(s):
-            return s.get("parallel_group") or f"seq_{s['step']}"
+            pg = s.get("parallel_group")
+            return str(pg) if pg is not None else f"seq_{s.get('step', 0)}"
         sorted_plan = sorted(plan, key=key)
         groups = []
         for _, steps in groupby(sorted_plan, key=key):
@@ -380,7 +438,38 @@ class GraphAgent:
         except Exception:
             return ""
 
+    @staticmethod
+    def _has_important_patterns(user_message: str) -> bool:
+        """快速启发式预检：通过关键词/正则匹配判断是否可能含重要信息。
+
+        仅当命中时才会调 LLM 做结构化提取，避免每次对话都调用 LLM。
+        """
+        import re
+        # 中文重要信息模式
+        cn_patterns = [
+            r'我\s*叫', r'我是\s*\S', r'我的\s*(名字|姓名|电话|手机|邮箱|微信|qq'
+            r'|地址|住址|职业|工作|公司|学校|专业|年龄|生日|性别|爱好|兴趣'
+            r'|喜欢|讨厌|爱|恨|习惯|目标|梦想|愿望)',
+            r'我\s*(喜欢|热爱|讨厌|恨|爱吃|爱喝|最爱|住在|来自|毕业于|任职于'
+            r'|在.*工作|学\w{1,4}的|从事|做\w{0,4}(开发|设计|产品|运营|工作))',
+            r'(记得|记住|请记住|别忘了|请记录|保存|收藏)\s*[:：]?\s*\S',
+            r'称[呼我].*[叫为]',
+        ]
+        # 英文重要信息模式
+        en_patterns = [
+            r'\bI\s+am\b', r'\bmy\s+(name|phone|email|address|job|work|company'
+            r'|school|age|birthday|hobby|interest)\b',
+            r'\b(I\s+like|I\s+love|I\s+prefer|I\s+hate|I\s+work|I\s+live|I\s+study'
+            r'|I\s+graduate|remember|important|don\'t\s+forget)\b',
+        ]
+        pattern = '|'.join(cn_patterns + en_patterns)
+        return bool(re.search(pattern, user_message, re.IGNORECASE))
+
     def _extract_important_info(self, user_query: str, response: str, provider_config: Dict) -> Dict:
+        # 启发式预检：无关键词则跳过 LLM 调用
+        if not self._has_important_patterns(user_query) and not self._has_important_patterns(response):
+            return {"has_important": False, "importance": 0, "content": ""}
+
         try:
             msgs = [
                 {"role": "system", "content": """分析以下对话，判断是否有值得长期记忆的重要信息。
@@ -418,25 +507,98 @@ class GraphAgent:
         except (json.JSONDecodeError, Exception):
             return {"has_important": False, "importance": 0, "content": ""}
 
+    def _promote_summary_to_long_term(self, summary: str, provider_config: Dict,
+                                       user_id: Optional[int]) -> None:
+        """将短期摘要中蕴含的重要信息升格为长期记忆。"""
+        if not summary:
+            return
+        try:
+            msgs = [
+                {"role": "system", "content": """分析以下对话摘要，判断是否有值得长期记忆的重要信息。
+
+值得记忆的信息包括：
+- 用户个人信息（姓名、职业、所在地、联系方式等）
+- 用户的明确偏好或习惯
+- 重要决策或计划
+- 多条摘要中反复出现的相同信息
+
+请严格按 JSON 格式回复（不要加 markdown 代码标记）：
+{"has_important": true/false, "importance": 1-10, "content": "提炼后的信息（一句话）"}"""},
+                {"role": "user", "content": f"对话摘要：\n{summary}"},
+            ]
+            result = self._call_llm(msgs, {**provider_config, "max_tokens": 200})
+            parsed = self._parse_json_from_llm(result["content"])
+            if parsed and parsed.get("has_important") and parsed.get("importance", 0) >= 6:
+                content = parsed.get("content", "").strip()
+                if len(content) >= 10:
+                    logger.info(
+                        f"[摘要升格] 摘要中的重要信息已升格为长期记忆 (重要性 {parsed['importance']}): {content}"
+                    )
+                    memory_manager.add_long_term_memory(
+                        user_id, content, category="knowledge"
+                    )
+        except Exception:
+            pass
+
+    def _summarize_short_term_to_long(self, user_id: int, provider_config: Dict) -> None:
+        """将短期记忆中的对话记录总结后存入长期记忆。"""
+        from backend.memory import get_short_term
+        short = get_short_term(user_id)
+        turns = short.get_turns(count=20)
+        if not turns:
+            return
+
+        # 拼接对话文本
+        dialog_text = "\n".join(f"{t['role']}: {t['content']}" for t in turns)
+        try:
+            sm = [
+                {"role": "system", "content": "请总结以下对话内容，提取关键信息、决策和用户画像。"
+                 "用简短的中文输出，突出值得长期记住的信息。"},
+                {"role": "user", "content": dialog_text},
+            ]
+            resp = self._call_llm(sm, {**provider_config, "max_tokens": 300})
+            summary = resp["content"].strip()
+            if not summary:
+                return
+
+            # 存为短期摘要（role=summary，不被滑窗清理）
+            memory_manager.add_short_term_summary(user_id, summary)
+
+            # 升格到长期记忆
+            self._promote_summary_to_long_term(summary, provider_config, user_id)
+            logger.info(f"[短期→长期] 短期对话已总结并存入长期记忆")
+        except Exception as exc:
+            logger.warning(f"[短期→长期] 总结失败: {exc}")
+
     def _update_memories(self, messages: List[Dict], response: str,
                           last_user_message: str, provider_config: Dict, user_id: Optional[int] = None):
-        # Short-term
-        user_msgs = [m for m in messages if m.get("role") == "user"]
-        if len(user_msgs) % self.summary_frequency == 0:
-            summary = self._generate_summary(messages, provider_config)
-            if summary:
-                memory_manager.add_short_term_summary(user_id, messages, summary)
+        # --- 1. 保存本轮对话到短期记忆（每轮都存，自动滑窗清理） ---
+        if user_id and last_user_message:
+            memory_manager.add_short_term_turn(user_id, "user", last_user_message)
+        if user_id and response:
+            memory_manager.add_short_term_turn(user_id, "assistant", response)
 
-        # Long-term
-        importance_info = self._extract_important_info(last_user_message, response, provider_config)
+        # --- 2. 检查短期记忆是否达到阈值，需要总结后存入长期记忆 ---
+        if user_id and memory_manager.needs_long_term_summary(user_id):
+            self._summarize_short_term_to_long(user_id, provider_config)
+
+        # --- 3. 长期记忆：每轮提取重要信息（不等待 token 累积） ---
+        importance_info = self._extract_important_info(
+            last_user_message, response, provider_config
+        )
         logger.info(
             f"[长期记忆] 重要性评估: has_important={importance_info.get('has_important')}, "
             f"importance={importance_info.get('importance')}, "
             f"content={importance_info.get('content')}"
         )
         if importance_info and importance_info.get("importance", 0) >= 6:
-            logger.info(f"[长期记忆] 已存储 (重要性 {importance_info['importance']} >= 6): {importance_info['content']}")
-            memory_manager.add_long_term_memory(user_id, importance_info["content"], category="knowledge")
+            logger.info(
+                f"[长期记忆] 已存储 (重要性 {importance_info['importance']} >= 6): "
+                f"{importance_info['content']}"
+            )
+            memory_manager.add_long_term_memory(
+                user_id, importance_info["content"], category="knowledge"
+            )
         else:
             logger.info("[长期记忆] 跳过存储 (重要性 < 6 或无重要信息)")
 
@@ -458,11 +620,20 @@ class GraphAgent:
     def _node_prepare_chat_state(self, state: AgentState) -> AgentState:
         provider_config = state["provider_config"]
         messages = provider_config.get("original_messages", [])
+        last_user_message = messages[-1]["content"] if messages else ""
         truncated = truncate_messages(messages, provider_config.get("max_tokens", 2048))
+
+        memory_context = memory_manager.get_context(
+            provider_config.get("user_id"), last_user_message
+        )
+        system_prompt = self._build_chat_system_prompt(memory_context)
+        full_messages = [{"role": "system", "content": system_prompt}] + truncated
+
         return {
             **state,
-            "messages": truncated,
-            "last_user_message": messages[-1]["content"] if messages else "",
+            "messages": full_messages,
+            "last_user_message": last_user_message,
+            "memory_context": memory_context,
         }
 
     def _node_chat_call_llm(self, state: AgentState) -> AgentState:
@@ -754,10 +925,6 @@ class GraphAgent:
         is_parallel = group[0].get("parallel_group") is not None and len(group) > 1
 
         if is_parallel:
-            thinking.append(f"并行执行 {len(group)} 个独立步骤")
-            if q is not None:
-                q.put({"type": "thinking", "content": thinking[-1]})
-
             def exec_one(s):
                 return s, self._execute_step(
                     step_desc=s["description"], step_index=s["step"],
@@ -779,11 +946,6 @@ class GraphAgent:
             for s in group:
                 step_num = s["step"]
                 step_desc = s["description"]
-                msg = f"正在执行步骤 {step_num}/{total_steps}: {step_desc}"
-                thinking.append(msg)
-                if q is not None:
-                    q.put({"type": "thinking", "content": msg})
-
                 result = self._execute_step(
                     step_desc=step_desc, step_index=step_num,
                     total_steps=total_steps, all_results=step_results,

@@ -12,6 +12,7 @@ from backend.auth import (
     create_user,
     decode_access_token,
     get_user,
+    get_user_by_email,
 )
 from backend.database import get_db
 
@@ -61,7 +62,7 @@ def register_auth_routes(app, limiter, get_current_user):
         if get_user(db, username):
             return JSONResponse({"error": "用户名已存在"}, status_code=400)
 
-        if get_user(db, email):
+        if get_user_by_email(db, email):
             return JSONResponse({"error": "邮箱已被注册"}, status_code=400)
 
         user = create_user(db, username, email, password)
@@ -89,13 +90,13 @@ def register_auth_routes(app, limiter, get_current_user):
             "access_token": access_token,
             "username": user.username,
         })
-        response.set_cookie(key="access_token", value=access_token, httponly=True)
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="lax")
         return response
 
     @app.post("/api/auth/logout")
     async def logout():
         response = JSONResponse({"success": True, "message": "退出成功"})
-        response.set_cookie(key="access_token", value="", expires=0)
+        response.set_cookie(key="access_token", value="", expires=0, secure=True, samesite="lax")
         return response
 
     @app.get("/api/auth/me")

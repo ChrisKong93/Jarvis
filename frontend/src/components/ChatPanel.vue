@@ -1,8 +1,18 @@
 <script setup>
-import { ref, reactive, nextTick, onMounted, watch } from 'vue'
+import { ref, reactive, nextTick, onMounted, watch, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import axios from 'axios'
+import {
+  isSpeechSupported,
+  startSpeechRecognition,
+  stopSpeechRecognition,
+  isRecognizing,
+  isTTSSupported,
+  speakText,
+  stopSpeaking,
+  isSpeakingNow,
+} from '../utils/voice.js'
 
 marked.setOptions({
   breaks: true,
@@ -38,7 +48,16 @@ const messageInput = ref('')
 const chatContainer = ref(null)
 const isProcessing = ref(false)
 const streamStarted = ref(false)
+const connectionStatus = ref('idle')  // idle | connecting | connected | error
+const connectingModel = ref('')
 let abortController = null
+
+// 语音状态
+const isRecording = ref(false)
+const recordingText = ref('')
+const autoTTS = ref(true)          // 是否自动朗读回复
+const voiceSupported = ref(false)
+const ttsSupported = ref(false)
 
 // 折叠状态
 const collapsedSections = reactive({})
@@ -61,6 +80,8 @@ const sendMessage = async () => {
 
   isProcessing.value = true
   streamStarted.value = false
+  connectionStatus.value = 'connecting'
+  connectingModel.value = `${props.settings.provider}${props.settings.model ? '/' + props.settings.model : ''}`
   abortController = new AbortController()
 
   const userMsg = {
@@ -81,6 +102,7 @@ const sendMessage = async () => {
     agent_mode: props.settings.agent_mode
   }
   if (props.settings.model) requestData.model = props.settings.model
+  if (props.settings.config_id) requestData.config_id = props.settings.config_id
 
   // 插入占位 assistant 消息（先 push 索引，后续通过索引更新）
   const msgIndex = messages.value.length
@@ -106,8 +128,10 @@ const sendMessage = async () => {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => 'Unknown error')
+      connectionStatus.value = 'error'
       throw new Error(`HTTP ${response.status}: ${errText}`)
     }
+    connectionStatus.value = 'connected'
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -182,6 +206,7 @@ const sendMessage = async () => {
       }
     }
   } catch (error) {
+    connectionStatus.value = 'error'
     if (error.name === 'AbortError') {
       // 用户取消，保留已生成的内容
     } else {
@@ -190,6 +215,7 @@ const sendMessage = async () => {
     }
   } finally {
     isProcessing.value = false
+    connectionStatus.value = 'idle'
     abortController = null
     await scrollToBottom()
   }
@@ -224,6 +250,98 @@ const handleStop = () => {
     abortController = null
   }
 }
+
+// ---- 语音输入 ----
+
+const toggleRecording = () => {
+  if (isRecording.value) {
+    stopRecording()
+  } else {
+    startRecording()
+  }
+}
+
+const startRecording = () => {
+  recordingText.value = ''
+
+  const started = startSpeechRecognition({
+    onResult: (text, isFinal) => {
+      recordingText.value = text
+      if (isFinal && text.trim()) {
+        // 识别到最终结果后自动填入并发送
+        messageInput.value = text.trim()
+        stopRecording()
+        sendMessage()
+      }
+    },
+    onError: (msg) => {
+      console.warn('[Voice] 识别错误:', msg)
+      isRecording.value = false
+    },
+    onEnd: () => {
+      isRecording.value = false
+    },
+  })
+
+  if (started) {
+    isRecording.value = true
+  }
+}
+
+const stopRecording = () => {
+  stopSpeechRecognition()
+  isRecording.value = false
+  recordingText.value = ''
+}
+
+// ---- 语音输出 ----
+
+const currentPlayingIndex = ref(-1)
+
+const playMessageVoice = (index) => {
+  const msg = messages.value[index]
+  if (!msg || msg.role !== 'assistant' || !msg.content) return
+
+  // 如果正在播放同一条消息，切换为暂停
+  if (currentPlayingIndex.value === index && isSpeakingNow()) {
+    stopSpeaking()
+    currentPlayingIndex.value = -1
+    return
+  }
+
+  // 停止之前的播放
+  stopSpeaking()
+  currentPlayingIndex.value = -1
+
+  // 提取纯文本（去掉 markdown 标记）
+  const plainText = msg.content
+    .replace(/[#*`~\[\]()>|\\]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (!plainText) return
+
+  speakText(plainText, {
+    lang: 'zh-CN',
+    rate: 1.0,
+    onStart: () => {
+      currentPlayingIndex.value = index
+    },
+    onEnd: () => {
+      currentPlayingIndex.value = -1
+    },
+    onError: () => {
+      currentPlayingIndex.value = -1
+    },
+  })
+}
+
+// ---- 生命周期 ----
+
+onUnmounted(() => {
+  stopRecording()
+  stopSpeaking()
+})
 
 const handleCopyMessage = (index) => {
   const message = messages.value[index]
@@ -262,6 +380,8 @@ const loadSessionMessages = async (sessionId) => {
 
 onMounted(() => {
   scrollToBottom()
+  voiceSupported.value = isSpeechSupported()
+  ttsSupported.value = isTTSSupported()
 })
 
 watch(() => props.sessionId, (newSessionId) => {
@@ -285,6 +405,13 @@ watch(() => messages.value.length, scrollToBottom)
           </span>
           <span class="message-time">{{ message.timestamp }}</span>
           <div class="message-actions">
+            <button 
+              v-if="message.role === 'assistant' && ttsSupported && message.content"
+              :class="['msg-action-btn', { 'playing': currentPlayingIndex === index }]"
+              @click="playMessageVoice(index)"
+            >
+              {{ currentPlayingIndex === index ? '⏹' : '🔊' }}
+            </button>
             <button class="msg-action-btn" @click="handleCopyMessage(index)">复制</button>
             <button class="msg-action-btn" @click="handleQuoteMessage(index)">引用</button>
           </div>
@@ -350,7 +477,9 @@ watch(() => messages.value.length, scrollToBottom)
           <div class="typing-indicator">
             <span></span><span></span><span></span>
           </div>
-          <p>正在思考...</p>
+          <p v-if="connectionStatus === 'connecting'">正在连接 {{ connectingModel }}...</p>
+          <p v-else-if="connectionStatus === 'connected'">模型已响应，等待输出...</p>
+          <p v-else>正在思考...</p>
         </div>
       </div>
     </div>
@@ -358,6 +487,14 @@ watch(() => messages.value.length, scrollToBottom)
     <div class="input-area">
       <div class="input-toolbar">
         <button class="icon-btn" @click="handleAttachFile" title="上传文件">📎</button>
+        <button 
+          v-if="voiceSupported"
+          :class="['icon-btn', { 'recording-active': isRecording }]"
+          @click="toggleRecording"
+          :title="isRecording ? '点击停止录音' : '语音输入'"
+        >
+          {{ isRecording ? '🔴' : '🎤' }}
+        </button>
         <button class="icon-btn" @click="handleSettings" title="设置">⚙️</button>
         <button 
           :disabled="!isProcessing"
@@ -367,6 +504,12 @@ watch(() => messages.value.length, scrollToBottom)
         >
           ⏹️
         </button>
+      </div>
+      <!-- 录音指示器 -->
+      <div v-if="isRecording" class="recording-indicator">
+        <span class="recording-dot"></span>
+        <span class="recording-text">录音中... {{ recordingText || '请说话' }}</span>
+        <button class="recording-cancel" @click="stopRecording">取消</button>
       </div>
       
       <div class="input-wrapper">
@@ -776,5 +919,76 @@ watch(() => messages.value.length, scrollToBottom)
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ---- 语音交互样式 ---- */
+
+.recording-active {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: var(--accent-error, #ef4444) !important;
+  animation: pulse-red 1s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: blink 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.recording-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recording-cancel {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.recording-cancel:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-error);
+}
+
+.msg-action-btn.playing {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: var(--accent-success, #22c55e) !important;
+  border-color: var(--accent-success, #22c55e) !important;
 }
 </style>

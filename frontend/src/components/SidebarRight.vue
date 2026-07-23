@@ -23,14 +23,11 @@ const emit = defineEmits(['update-stats'])
 
 const loadData = async () => {
   try {
-    const [memoryRes, statsRes] = await Promise.all([
-      axios.get('/api/memory'),
-      axios.get('/api/memory/stats')
-    ])
+    const memoryRes = await axios.get('/api/memory')
     memory.value = memoryRes.data || { short_term: [], long_term: [] }
     memoryStats.value = {
-        short_term_count: (statsRes.data && statsRes.data.short_term_summaries) || 0,
-        long_term_count: (statsRes.data && statsRes.data.long_term_memories) || 0
+        short_term_count: memory.value.short_term.length,
+        long_term_count: memory.value.long_term.length
       }
   } catch (e) {
     console.error('Failed to load data:', e)

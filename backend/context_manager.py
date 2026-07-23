@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 def estimate_token_count(text: str) -> int:
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
@@ -21,7 +21,7 @@ def calculate_messages_tokens(messages: List[Dict]) -> int:
 def truncate_messages(
     messages: List[Dict],
     max_tokens: int = 2048,
-    system_prompt: str = None
+    system_prompt: Optional[str] = None
 ) -> List[Dict]:
     system_tokens = estimate_token_count(system_prompt) if system_prompt else 0
     available_tokens = max_tokens - system_tokens - 512

@@ -129,7 +129,12 @@ def register_chat_routes(app, get_current_user, agent):
             result["session_id"] = session_id
 
             if session:
-                session.messages = messages + [{"role": "assistant", "content": result["content"]}]
+                assistant_msg = {"role": "assistant", "content": result["content"]}
+                if result.get("plan"):
+                    assistant_msg["plan"] = result["plan"]
+                if result.get("tool_info"):
+                    assistant_msg["tool_info"] = result["tool_info"]
+                session.messages = messages + [assistant_msg]
                 session_manager.update_session_messages(session_id, session.messages)
 
             return result
@@ -159,6 +164,8 @@ def register_chat_routes(app, get_current_user, agent):
 
         async def event_generator():
             full_content = ""
+            collected_plan = None
+            collected_tool_info = []
             try:
                 async for event in iterate_in_threadpool(
                     run_fn(
@@ -173,18 +180,37 @@ def register_chat_routes(app, get_current_user, agent):
                     )
                 ):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    if event["type"] == "token":
+                    event_type = event["type"]
+                    if event_type == "token":
                         full_content += event.get("content", "")
-                    elif event["type"] == "error":
+                    elif event_type == "plan":
+                        collected_plan = event.get("steps") or event.get("plan") or []
+                    elif event_type == "tool_call":
+                        collected_tool_info.append({
+                            "tool_name": event["tool_name"],
+                            "parameters": event["parameters"],
+                            "status": "running",
+                            "result": None,
+                        })
+                    elif event_type == "tool_result":
+                        if collected_tool_info:
+                            collected_tool_info[-1]["result"] = event.get("result", "")
+                            collected_tool_info[-1]["status"] = "completed"
+                    elif event_type == "error":
                         break
             except Exception as exc:
                 logger.error(f"Stream error: {exc}")
                 yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
                 return
 
-            # 更新会话消息
+            # 更新会话消息（含 plan 和工具调用记录）
             if session and full_content:
-                session.messages = messages + [{"role": "assistant", "content": full_content}]
+                assistant_msg = {"role": "assistant", "content": full_content}
+                if collected_plan:
+                    assistant_msg["plan"] = collected_plan
+                if collected_tool_info:
+                    assistant_msg["tool_info"] = collected_tool_info
+                session.messages = messages + [assistant_msg]
                 session_manager.update_session_messages(session_id, session.messages)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")

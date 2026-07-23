@@ -32,13 +32,33 @@ AGENT_MODE_MAPPING = {
 def extract_llm_options(data: Dict[str, Any],
                         user_id: Optional[int] = None,
                         db: Optional[Session] = None) -> Dict[str, Any]:
-    """从请求数据中提取 LLM 配置，必要时回退到数据库配置。"""
+    """从请求数据中提取 LLM 配置，必要时回退到数据库配置。
+
+    支持 config_id 参数，优先按 config_id 读取完整配置。
+    """
     options = {
         "provider": data.get("provider", DEFAULT_PROVIDER),
         "model": data.get("model"),
         "api_key": data.get("api_key"),
         "base_url": data.get("base_url"),
     }
+
+    config_id = data.get("config_id")
+    if user_id and db and config_id:
+        # 按 config_id 精确查找
+        config = db.query(ModelConfig).filter(
+            ModelConfig.id == config_id,
+            ModelConfig.user_id == user_id,
+            ModelConfig.is_active == True,
+        ).first()
+        if config:
+            options["provider"] = config.provider_id
+            options["model"] = config.default_model
+            if config.api_key:
+                options["api_key"] = decrypt_api_key(config.api_key)
+            if config.base_url:
+                options["base_url"] = config.base_url
+        return options
 
     if user_id and db:
         config = db.query(ModelConfig).filter(

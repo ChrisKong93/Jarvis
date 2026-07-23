@@ -59,16 +59,19 @@ const currentSettings = ref({
 const userConfigs = ref([])
 const providersList = ref([])
 
-const configuredProviders = computed(() => {
-  return userConfigs.value.map(c => {
-    const p = providersList.value.find(pr => pr.id === c.provider_id)
-    return {
-      provider_id: c.provider_id,
-      provider_name: c.provider_name || p?.name || c.provider_id,
-      default_model: c.default_model || p?.default_model || '',
-      base_url: c.base_url || p?.base_url || ''
-    }
-  })
+const displayName = (cfg) => {
+  return cfg.name || `${cfg.provider_name} - ${cfg.default_model || '?'}`
+}
+
+const configuredConfigs = computed(() => {
+  return userConfigs.value.map(c => ({
+    id: c.id,
+    name: displayName(c),
+    provider_id: c.provider_id,
+    provider_name: c.provider_name,
+    default_model: c.default_model,
+    base_url: c.base_url,
+  }))
 })
 
 const loadUserConfigs = async () => {
@@ -94,11 +97,11 @@ const loadSettingsFromServer = async () => {
     userConfigs.value = configs
 
     if (configs.length > 0) {
-      const savedProviderId = localStorage.getItem('jarvis-provider-id')
-      const config = configs.find(c => c.provider_id === savedProviderId) || configs[0]
-      const provider = providers.find(p => p.id === config.provider_id)
+      const savedConfigId = parseInt(localStorage.getItem('jarvis-config-id') || '0', 10)
+      const config = configs.find(c => c.id === savedConfigId) || configs[0]
 
       currentSettings.value = {
+        config_id: config.id,
         provider: config.provider_id,
         model: config.default_model || '',
         api_key: '',
@@ -106,7 +109,7 @@ const loadSettingsFromServer = async () => {
         max_tokens: config.max_tokens || 2048,
         agent_mode: config.agent_mode || 'plan_execute'
       }
-      localStorage.setItem('jarvis-provider-id', config.provider_id)
+      localStorage.setItem('jarvis-config-id', String(config.id))
     } else {
       const savedProviderId = localStorage.getItem('jarvis-provider-id') || 'llama_cpp'
       const provider = providers.find(p => p.id === savedProviderId) || providers[0]
@@ -217,56 +220,31 @@ const handleUpdateStats = (stats) => {
 
 const handleSettingsChange = async (settings) => {
   currentSettings.value = { ...settings }
-  localStorage.setItem('jarvis-provider-id', settings.provider)
-  await saveSettingsToServer(settings)
+  // 如果 settings 包含 config_id，保存到 localStorage
+  if (settings.config_id) {
+    localStorage.setItem('jarvis-config-id', String(settings.config_id))
+  } else {
+    localStorage.setItem('jarvis-provider-id', settings.provider)
+  }
   await loadUserConfigs()
 }
 
-const handleQuickSwitch = async (providerId) => {
-  if (providerId === currentSettings.value.provider) return
-  const config = userConfigs.value.find(c => c.provider_id === providerId)
-  const provider = providersList.value.find(p => p.id === providerId)
-  if (config) {
-    currentSettings.value = {
-      provider: config.provider_id,
-      model: config.default_model || '',
-      api_key: '',
-      base_url: config.base_url || '',
-      max_tokens: config.max_tokens || 2048,
-      agent_mode: config.agent_mode || 'plan_execute'
-    }
-  } else if (provider) {
-    currentSettings.value = {
-      provider: provider.id,
-      model: provider.default_model || '',
-      api_key: '',
-      base_url: provider.base_url || '',
-      max_tokens: currentSettings.value.max_tokens,
-      agent_mode: currentSettings.value.agent_mode
-    }
-  }
-  localStorage.setItem('jarvis-provider-id', providerId)
-}
+const handleQuickSwitch = async (configId) => {
+  configId = parseInt(configId, 10)
+  if (configId === currentSettings.value.config_id) return
+  const config = userConfigs.value.find(c => c.id === configId)
+  if (!config) return
 
-const saveSettingsToServer = async (settings) => {
-  try {
-    const providersRes = await axios.get('/api/providers')
-    const provider = providersRes.data.providers.find(p => p.id === settings.provider)
-
-    await axios.post('/api/user/config', {
-      provider_id: settings.provider,
-      provider_name: provider?.name || settings.provider,
-      api_key: settings.api_key,
-      base_url: settings.base_url,
-      default_model: settings.model,
-      max_tokens: settings.max_tokens,
-      agent_mode: settings.agent_mode
-    })
-    addToast('设置已保存', 'success')
-  } catch (e) {
-    console.error('保存设置到服务器失败:', e)
-    addToast('保存设置失败: ' + (e.response?.data?.error || e.message), 'error')
+  currentSettings.value = {
+    config_id: config.id,
+    provider: config.provider_id,
+    model: config.default_model || '',
+    api_key: '',
+    base_url: config.base_url || '',
+    max_tokens: config.max_tokens || 2048,
+    agent_mode: config.agent_mode || 'plan_execute'
   }
+  localStorage.setItem('jarvis-config-id', String(config.id))
 }
 
 const initSession = async () => {
@@ -332,10 +310,10 @@ watch(sessionId, (newSessionId) => {
           <div v-if="activePage === 'chat'" class="provider-switcher">
             <div class="switcher-label">模型</div>
             <select class="switcher-select" @change="handleQuickSwitch($event.target.value)">
-               <option v-for="cp in configuredProviders" :key="cp.provider_id" :value="cp.provider_id" :selected="cp.provider_id === currentSettings.provider">
-                 {{ cp.provider_name }}
+               <option v-for="cp in configuredConfigs" :key="cp.id" :value="cp.id" :selected="cp.id === currentSettings.config_id">
+                 {{ cp.name }}
                </option>
-               <option v-if="configuredProviders.length === 0" value="" disabled>暂无已配置模型</option>
+               <option v-if="configuredConfigs.length === 0" value="" disabled>暂无已配置模型</option>
              </select>
             <span class="switcher-model">{{ currentSettings.model || '未选择' }}</span>
           </div>
@@ -375,7 +353,7 @@ watch(sessionId, (newSessionId) => {
       <ChatPanel v-if="activePage === 'chat'" :mode="currentMode" :settings="currentSettings" :session-id="sessionId" @open-settings="handleOpenSettings" @update-stats="handleUpdateStats" />
       <PluginPage v-else-if="activePage === 'plugins'" class="page-content" />
       <MCPServerPage v-else-if="activePage === 'mcp'" class="page-content" />
-      <SettingsPage v-else-if="activePage === 'settings'" :settings="currentSettings" @settings-change="handleSettingsChange" />
+      <SettingsPage v-else-if="activePage === 'settings'" class="page-content" :settings="currentSettings" @settings-change="handleSettingsChange" />
     </main>
     
     <SidebarRight v-if="activePage === 'chat'" :stats="chatStats" />

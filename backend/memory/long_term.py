@@ -82,7 +82,7 @@ class LongTermMemory:
     ) -> List[Dict]:
         if vector_store.is_available():
             return self._vector_retrieve(query, top_k, min_similarity)
-        return self._keyword_retrieve(query, top_k, 0.1)
+        return self._keyword_retrieve(query, top_k, min_similarity)
 
     def _vector_retrieve(
         self, query: str, top_k: int = 5, min_similarity: float = 0.1

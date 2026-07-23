@@ -14,7 +14,7 @@ An AI Agent intelligent assistant system based on FastAPI + Vue3, supporting **l
 - 🔄 **Reflection Mechanism**: Automatically retries and adjusts strategies when tool calls fail
 - 🛠️ **Tool Calling**: Supports calculator, search, weather, file operations, date/time tools with **parallel execution**
 - 🧩 **Plugin System**: Tools managed as plugins with enable/disable, install/uninstall capabilities
-- 🧠 **Memory System**: Short-term (conversation summaries) and long-term (important info persistence) memory, backed by SQLite + ChromaDB vector storage, LLM-automated importance scoring (threshold ≥ 6/10), background embedding model download
+- 🧠 **Memory System**: Short-term (raw conversations + sliding window) and long-term (important info persistence) memory, backed by SQLite + ChromaDB vector storage, LLM-automated importance scoring (threshold ≥ 6/10), background embedding model download
 - 🔐 **API Key Encryption**: Fernet (PBKDF2) encrypted storage for user API Keys
 - 🔗 **MCP Protocol Support**: Integrated Model Context Protocol with stdio and SSE transport, connect external MCP servers to extend tool capabilities
 - ⚡ **Streaming Output**: SSE (Server-Sent Events) streaming, token-by-token rendering, real-time tool call visualization
@@ -347,11 +347,11 @@ Header shows **quick model switching** dropdown with only configured Providers, 
 
 In left sidebar settings page you can:
 
-- **Select Provider**: Choose from available Provider list
-- **Configure API Key / Base URL**: Fill server connection info (API Key encrypted)
-- **Select Model**: Choose from Provider's supported model list (supports dynamic fetching)
-- **Configure Max Tokens**, Agent mode (plan_execute / react / chat)
-- Configured Providers show ✓ and "Configured" label
+- **Add Multiple Configs**: Click "Add Config", fill in custom name, Provider, Model, API Key, Base URL
+- **Independent Configs**: Each config has its own provider / model / api_key / base_url / agent_mode / max_tokens
+- **Edit / Delete**: Edit or delete saved configs
+- **Quick Switch**: Click "💬 Use" on a config card, or switch in the header dropdown
+- **Dynamic Model List**: Fill API Key and Base URL, then click "Refresh" to fetch models from Provider's API
 
 ### Configuration Flow
 
@@ -373,17 +373,17 @@ Subsequent use can directly switch in top, no reconfiguration needed
 
 | Type | Storage | Retrieval | User Isolation | Features |
 |------|---------|-----------|----------------|----------|
-| Short-term | SQLite `short_term_memories` table | Direct read | ✅ Per user | Auto-generate summary every N turns, auto-overwrite oldest |
+| Short-term | SQLite `short_term_memories` table | Direct read last N turns | ✅ Per user | Raw conversation turns (user/assistant) stored per-turn, sliding window keeps last 100; auto-summarize when count ≥ 50 or tokens ≥ 4096 |
 | Long-term | SQLite `long_term_memories` table + ChromaDB vector index | Semantic vector search (top_k=3) | ✅ Per user | LLM importance scoring (threshold ≥ 6/10), vector dedup (similarity ≥ 0.85 skip), time-decay ranking (30-day half-life) |
 
 Memory is automatically managed by Agent:
 
-- Agent generates short-term summaries during conversations
-- LLM analyzes and scores each conversation (1-10) after completion
-- Info with importance ≥ 6 is extracted as long-term memory, stored in SQLite + ChromaDB
-- Embedding model (default all-MiniLM-L6-v2) auto-downloads in background, falls back to pseudo-vector mode when unavailable
-- Related memory retrieved via vector similarity search before each conversation
-- Right sidebar panel for viewing and managing all memories
+- **Short-term memory**: Raw conversation turns (user/assistant) stored per-turn with sliding window (keep 100); auto-summarize when turn count ≥ 50 or total tokens ≥ 4096 — summary is stored and exempt from sliding window cleanup
+- **Long-term promotion**: When short-term triggers summarization, key info is automatically promoted to long-term memory (ChromaDB + SQLite)
+- **Per-turn extraction**: Each conversation turn is analyzed and scored (1-10) by LLM; info with importance ≥ 6 is directly stored as long-term memory
+- **Semantic retrieval**: Before each conversation, relevant memories are retrieved via ChromaDB vector similarity (top_k=3), with keyword Jaccard fallback and 30-day half-life time decay
+- **Embedding model**: Default all-MiniLM-L6-v2 auto-downloads, falls back to pseudo-vector mode when unavailable
+- **Management UI**: Right sidebar panel for viewing and managing all memories
 
 ## Streaming Output
 
@@ -392,6 +392,7 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 - **Token-by-token rendering**: Each LLM-generated token pushed to frontend in real-time
 - **Tool call visualization**: Tool invocation, execution, and reflection displayed in real-time
 - **Event types**: `token`, `thinking`, `tool_call`, `tool_result`, `summary_start`, `done`, `error`
+- **Connection status feedback**: Shows "Connecting provider/model..." → "Model connected" → streaming output in real-time; connection failures display the error reason directly
 
 ## Interface Layout
 
@@ -428,7 +429,8 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
 |----------|--------|-------------|
 | `/api/providers` | GET | Get available Providers list |
 | `/api/user/config` | GET | Get current user's model configs |
-| `/api/user/config` | POST | Save current user's model config (includes agent_mode) |
+| `/api/user/config` | POST | Add new model config |
+| `/api/user/config/{id}` | PUT | Update specific model config |
 | `/api/user/config/{id}` | DELETE | Delete specific model config |
 | `/api/models` | GET | Get models for specific Provider |
 
@@ -483,11 +485,12 @@ Jarvis supports full SSE (Server-Sent Events) streaming:
   "max_tokens": 2048,
   "provider": "deepseek",
   "model": "deepseek-chat",
-  "agent_mode": "graph"
+  "config_id": 1,
+  "agent_mode": "plan_execute"
 }
 ```
 
-> api_key and base_url automatically used from current user's database config, no need to pass from frontend.
+> api_key and base_url are automatically used from database config; specify config_id to use a specific saved config.
 
 ## Tool List
 

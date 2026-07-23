@@ -14,7 +14,7 @@
 - 🔄 **反思机制**：工具调用失败时自动重试与策略调整
 - 🛠️ **工具调用**：支持计算器、搜索、天气、文件操作、日期时间等工具，支持**并行执行**多个工具
 - 🧩 **插件系统**：工具作为插件存在，支持启用/禁用、安装/卸载管理
-- 🧠 **记忆系统**：短期记忆（对话总结）与长期记忆（重要信息持久化），基于 SQLite + ChromaDB 向量存储，LLM 自动评估重要性（阈值 ≥ 6/10），embedding 模型自动后台下载
+- 🧠 **记忆系统**：短期记忆（原始对话+滑窗清理）与长期记忆（重要信息持久化），基于 SQLite + ChromaDB 向量存储，LLM 自动评估重要性（阈值 ≥ 6/10），embedding 模型自动后台下载
 - 🔐 **API Key 加密**：使用 Fernet (PBKDF2) 对用户 API Key 进行加密存储
 - 🔗 **MCP 协议支持**：集成 Model Context Protocol，支持 stdio 和 SSE 传输，可连接外部 MCP 服务器扩展工具能力
 - ⚡ **流式输出**：支持 SSE (Server-Sent Events) 流式输出，逐 token 渲染，工具调用过程实时可见
@@ -113,7 +113,7 @@ Jarvis/
 │   └── vectors/              # ChromaDB 向量存储
 ├── requirements.txt
 ├── Dockerfile               # 多阶段构建（前端 + 后端），含 HEALTHCHECK + 非 root 用户
-├── docker-compose.yml       # Docker Compose 配置（含健康检查、持久化卷）
+├── docker-compose.yml       # Docker Compose 配置（含 platform、健康检查、持久化卷）
 ├── .dockerignore
 ├── .env.example             # 环境变量示例
 ├── pytest.ini               # 测试配置
@@ -346,11 +346,11 @@ MCP 配置路径可通过环境变量 `MCP_CONFIG_PATH` 自定义。
 
 在左侧栏设置页面中可以：
 
-- **选择 Provider**：从可用 Provider 列表中选择
-- **配置 API Key / Base URL**：填写服务端连接信息（API Key 加密存储）
-- **选择模型**：从 Provider 支持的模型列表中选择（支持动态获取官网模型列表）
-- **配置最大 Token 数**、Agent 模式（plan_execute / react / chat）
-- 已配置的 Provider 显示 ✓ 和「已配置」标签
+- **添加多个配置**：点击「添加配置」，填写自定义名称、Provider、Model、API Key、Base URL
+- **每个配置独立**：每个配置有独立的 provider / model / api_key / base_url / agent_mode / max_tokens
+- **编辑/删除**：对已保存的配置可编辑或删除
+- **快速切换**：点击配置卡片上的「💬 使用」按钮，或在顶部下拉框直接切换
+- **动态获取模型列表**：填写 API Key 和 Base URL 后，点击「刷新」从 Provider 的 API 获取模型列表
 
 ### 配置流程
 
@@ -372,17 +372,17 @@ MCP 配置路径可通过环境变量 `MCP_CONFIG_PATH` 自定义。
 
 | 类型 | 存储方式 | 检索方式 | 用户隔离 | 特性 |
 |------|----------|----------|----------|------|
-| 短期记忆 | SQLite `short_term_memories` 表 | 直接读取 | ✅ 每个用户独立 | 每 N 轮对话自动生成总结，自动覆盖最旧的 |
+| 短期记忆 | SQLite `short_term_memories` 表 | 直接读取最近 N 条 | ✅ 每个用户独立 | 每轮对话原始记录（user/assistant）自动存入，滑窗保留最近 100 条；对话条数 ≥ 50 或 token ≥ 4096 时自动总结 |
 | 长期记忆 | SQLite `long_term_memories` 表 + ChromaDB 向量索引 | 语义向量检索（top_k=3） | ✅ 每个用户独立 | LLM 自动评估重要性（阈值 ≥ 6/10），向量去重（相似度 ≥ 0.85 跳过），时间衰减排序（30 天半衰期） |
 
 记忆由 Agent 自动管理：
 
-- 对话过程中 Agent 自动生成短期总结
-- 每次对话完成后，LLM 分析对话内容并评分（1-10 分）
-- 重要性 ≥ 6 的信息自动提取为长期记忆，存入 SQLite + ChromaDB
-- embedding 模型（默认 all-MiniLM-L6-v2）后台自动下载，不可用时自动降级为伪向量模式
-- 每次对话前自动检索相关记忆（向量相似度检索）作为上下文
-- 右侧面板可查看和管理所有记忆
+- **短期记忆**：每轮对话原始记录（user/assistant 轮流）自动存入短期记忆，滑窗保留最近 100 条；对话条数 ≥ 50 或 token 总量 ≥ 4096 时，触发 LLM 总结并存入摘要（摘要不被滑窗清理）
+- **长期记忆升格**：短期记忆触发总结后，自动将摘要中的关键信息升格到长期记忆（ChromaDB + SQLite）
+- **每轮直接提取**：每轮对话 LLM 分析内容并评分（1-10 分），重要性 ≥ 6 的信息直接提取为长期记忆
+- **语义检索**：每轮对话前自动从 ChromaDB 检索相关记忆（向量相似度 top_k=3），keyword Jaccard 降级，30 天半衰期时间衰减排序
+- **嵌入模型**：默认 all-MiniLM-L6-v2 自动下载，不可用时降级为伪向量模式
+- **管理界面**：右侧面板可查看和管理所有记忆
 
 ## 流式输出
 
@@ -391,6 +391,7 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 - **逐 token 渲染**：LLM 生成的每个 token 实时推送到前端
 - **工具调用可视化**：工具调用、执行、反思过程实时展示
 - **事件类型**：`token`（文本）、`thinking`（思考）、`tool_call`（工具调用）、`tool_result`（工具结果）、`summary_start`（开始总结）、`done`（完成）、`error`（错误）
+- **连接状态反馈**：发送消息后实时显示"正在连接 provider/model..." → "模型已响应" → 流式输出，连接失败直接显示错误原因
 
 ## 界面布局
 
@@ -427,7 +428,8 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
 |------|------|------|
 | `/api/providers` | GET | 获取可用 Provider 列表 |
 | `/api/user/config` | GET | 获取当前用户的模型配置列表 |
-| `/api/user/config` | POST | 保存当前用户的模型配置（含 agent_mode） |
+| `/api/user/config` | POST | 添加新的模型配置 |
+| `/api/user/config/{id}` | PUT | 更新指定模型配置 |
 | `/api/user/config/{id}` | DELETE | 删除指定模型配置 |
 | `/api/models` | GET | 获取指定 Provider 的模型列表 |
 
@@ -482,11 +484,12 @@ Jarvis 支持完整的 SSE (Server-Sent Events) 流式输出：
   "max_tokens": 2048,
   "provider": "deepseek",
   "model": "deepseek-chat",
-  "agent_mode": "graph"
+  "config_id": 1,
+  "agent_mode": "plan_execute"
 }
 ```
 
-> api_key 和 base_url 由后端自动使用当前用户的数据库配置，无需前端传入。
+> api_key 和 base_url 由后端自动使用当前用户的数据库配置，可通过 config_id 指定使用哪个配置；无需前端传入。
 
 ## 工具列表
 

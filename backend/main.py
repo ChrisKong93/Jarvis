@@ -23,6 +23,7 @@ from backend.auth import decode_access_token, get_user
 from backend.database import init_db, get_db
 from backend.graph_agent import GraphAgent
 from backend.mcp import mcp_manager
+from backend.memory.embeddings import embedding_generator
 from backend.plugin_manager import seed_default_plugins
 from backend.routes.helpers import sync_mcp_tools
 from backend.session_manager import session_manager
@@ -60,7 +61,6 @@ seed_default_plugins()
 session_manager.cleanup_expired_sessions()
 
 # 后台自动下载 Embedding 模型（不阻塞服务启动）
-from backend.memory.embeddings import embedding_generator  # noqa: E402
 embedding_generator.try_download_model_background()
 
 # ---------------------------------------------------------------------------
@@ -117,6 +117,7 @@ from backend.routes.mcp import register_mcp_routes  # noqa: E402
 from backend.routes.plugins import register_plugin_routes  # noqa: E402
 from backend.routes.session import register_session_routes  # noqa: E402
 from backend.routes.tools import register_tools_routes  # noqa: E402
+from backend.routes.voice import register_voice_routes  # noqa: E402
 
 register_auth_routes(app, limiter, get_current_user)
 register_memory_routes(app, get_current_user)
@@ -126,6 +127,7 @@ register_mcp_routes(app, get_current_user)
 register_plugin_routes(app, get_current_user)
 register_session_routes(app, get_current_user)
 register_tools_routes(app, get_current_user)
+register_voice_routes(app, get_current_user)
 
 # ---------------------------------------------------------------------------
 # 根路由

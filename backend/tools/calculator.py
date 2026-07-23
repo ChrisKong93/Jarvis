@@ -48,7 +48,7 @@ class CalculatorTool(Tool):
             return f"计算错误：{str(e)}"
 
     def _sanitize_expression(self, expression: str) -> str:
-        allowed_pattern = re.compile(r'^[0-9+\-*/().%^ \t\nsqrtpow sincostanloglog10exp pie]+$')
+        allowed_pattern = re.compile(r'^[0-9+\-*/().%^ \t\nabsqrtpow sincostanloglog10exp pie-]+$')
         if allowed_pattern.match(expression):
             return expression.replace('^', '**')
         return ""

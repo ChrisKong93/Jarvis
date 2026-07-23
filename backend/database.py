@@ -37,6 +37,7 @@ class ModelConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(100), default="")  # 用户自定义标识，如 "我的 GPT-4o"
     provider_id = Column(String(50), nullable=False)
     provider_name = Column(String(100), nullable=False)
     api_key = Column(Text)
@@ -56,9 +57,10 @@ class ShortTermMemory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    summary = Column(Text, nullable=False)
+    role = Column(String(16), nullable=False, default="summary")  # "user", "assistant", "summary"
+    content = Column(Text, nullable=False)  # 对话内容或摘要文本
     message_count = Column(Integer, default=0)
-    key_points = Column(Text, default="[]")
+    metadata_json = Column(Text, default="{}")  # plan、tool_info 等 JSON 数据
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="short_term_memories")

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 EMBEDDING_DIMENSION = 384  # all-MiniLM-L6-v2 输出维度
-HF_CACHE_DIR = os.path.expanduser("~/.cache/huggingface/hub")
+HF_CACHE_DIR = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")) + "/hub"
 
 
 class EmbeddingGenerator:

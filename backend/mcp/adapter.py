@@ -4,7 +4,6 @@ MCP 工具适配器。
 将 MCP 工具包装为 Jarvis 原生的 Tool 接口，
 使 Agent 可以无缝调用 MCP 工具。
 """
-import json
 import logging
 from typing import Any, Dict, Optional
 

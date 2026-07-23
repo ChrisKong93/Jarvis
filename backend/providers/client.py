@@ -233,6 +233,7 @@ class LLMClient:
                     content_parts: List[str] = []
                     tool_calls_accum: Dict[int, Dict] = {}
                     finish_reason = None
+                    usage: Optional[Dict[str, int]] = None
 
                     for line in response.iter_lines():
                         if not line.startswith("data: "):
@@ -244,6 +245,10 @@ class LLMClient:
                             chunk = json.loads(data)
                         except json.JSONDecodeError:
                             continue
+
+                        # 部分 API 在最后 chunk 中返回 usage（无 choices）
+                        if chunk.get("usage"):
+                            usage = chunk["usage"]
 
                         choices = chunk.get("choices", [])
                         if not choices:
@@ -295,6 +300,7 @@ class LLMClient:
                         "response_time": round(elapsed, 2),
                         "model": resolved_model,
                         "provider": provider_id,
+                        "usage": usage or {},
                     }
 
         except httpx.TimeoutException:
@@ -425,6 +431,7 @@ class LLMClient:
                 content_parts: List[str] = []
                 tool_calls_accum: Dict[int, Dict] = {}
                 finish_reason = None
+                usage: Optional[Dict[str, int]] = None
 
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
@@ -436,6 +443,10 @@ class LLMClient:
                         chunk = json.loads(data)
                     except json.JSONDecodeError:
                         continue
+
+                    # 部分 API 在最后 chunk 中返回 usage（无 choices）
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
 
                     choices = chunk.get("choices", [])
                     if not choices:
@@ -487,6 +498,7 @@ class LLMClient:
                     "response_time": round(elapsed, 2),
                     "model": resolved_model,
                     "provider": provider_id,
+                    "usage": usage or {},
                 }
 
         except httpx.TimeoutException:

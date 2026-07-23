@@ -1,6 +1,12 @@
-from backend.tools.base import Tool, tool_registry
 import datetime
+import logging
+import threading
 import time
+
+from backend.tools.base import Tool, tool_registry
+
+logger = logging.getLogger(__name__)
+
 
 class DateTimeTool(Tool):
     name = "datetime"
@@ -13,7 +19,7 @@ class DateTimeTool(Tool):
 
     def execute(self, **kwargs) -> str:
         action = kwargs.get("action", "").lower()
-        
+
         if not action:
             return "错误：请提供 action 参数"
 
@@ -40,8 +46,14 @@ class DateTimeTool(Tool):
             return "错误：秒数必须大于0"
         if seconds > 300:
             return "错误：定时器最长支持5分钟"
-        
-        time.sleep(seconds)
-        return f"⏰ {message}"
+
+        # 后台线程启动定时器，不阻塞线程池
+        threading.Timer(seconds, self._on_timer_done, args=[message]).start()
+        return f"✅ 定时器已设置，将在 {seconds} 秒后提醒：{message}"
+
+    @staticmethod
+    def _on_timer_done(message: str) -> None:
+        logger.info("⏰ 定时器触发：%s", message)
+
 
 tool_registry.register(DateTimeTool())

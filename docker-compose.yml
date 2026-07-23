@@ -6,6 +6,8 @@ services:
       args:
         # 中国大陆用户可在 .env 中设置 PIP_INDEX_URL 加速 pip 安装
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    # Apple Silicon (M1/M2/M3) 可取消下方注释以 x86 兼容模式运行
+    # platform: linux/amd64
     container_name: jarvis
     ports:
       - "${PORT:-8000}:8000"

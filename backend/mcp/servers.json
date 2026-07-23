@@ -9,8 +9,17 @@
         "-y",
         "@fnnm/fetch"
       ],
-      "env": {},
-      "url": ""
+      "env": {}
+    },
+    {
+      "name": "playwright",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ],
+      "env": {}
     }
   ]
 }
